@@ -6,6 +6,7 @@ import { RetroPanel } from '@/components/common/RetroPanel';
 import { RetroButton } from '@/components/common/RetroButton';
 import { RetroHeading } from '@/components/common/RetroHeading';
 import { ThreeScene } from '@/components/3d/ThreeScene';
+import { RetroFrameCanvas } from '@/components/3d/RetroFrameCanvas';
 import { CreateSpaceForm } from '@/components/space/CreateSpaceForm';
 import { useRouter } from 'next/navigation';
 
@@ -357,26 +358,26 @@ export function SpacePreviewWindow() {
             ) : selectedSpace ? (
               <>
                 {/* 3D Canvas */}
-      <div className="flex-1 relative overflow-hidden">
-        <div className="absolute inset-0" style={{ backgroundColor: '#f9fafb' }}>
-          <ThreeScene
+                <div className="relative flex-1">
+                  <RetroFrameCanvas className="overflow-hidden bg-gray-100">
+                    <ThreeScene
                       kioskId={selectedSpace.kioskId}
                       enableGallery={true}
-          />
-        </div>
+                    />
+                  </RetroFrameCanvas>
 
-        {/* Overlay Controls */}
+                  {/* Overlay Controls */}
                   <div className="absolute top-2 right-2 md:top-4 md:right-4 z-10">
-          <RetroButton
-            variant="secondary"
-            size="sm"
-            onClick={handleEnterSpace}
-          >
+                    <RetroButton
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleEnterSpace}
+                    >
                       <span className="hidden md:inline">Enter Full View</span>
                       <span className="md:hidden">Enter</span>
-          </RetroButton>
-        </div>
-      </div>
+                    </RetroButton>
+                  </div>
+                </div>
 
                 {/* Footer Actions - Desktop Only */}
       <div 

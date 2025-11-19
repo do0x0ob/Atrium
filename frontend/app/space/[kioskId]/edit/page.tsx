@@ -7,6 +7,7 @@ import { RetroPanel } from "@/components/common/RetroPanel";
 import { RetroButton } from "@/components/common/RetroButton";
 import { RetroHeading } from "@/components/common/RetroHeading";
 import { ThreeScene } from "@/components/3d/ThreeScene";
+import { RetroFrameCanvas } from "@/components/3d/RetroFrameCanvas";
 
 interface SpaceData {
   kioskId: string;
@@ -321,8 +322,8 @@ export default function SpaceEditPage() {
         </RetroPanel>
 
         {/* 3D Scene Area */}
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 relative" style={{ backgroundColor: '#f9fafb' }}>
+        <div className="flex-1 flex flex-col relative">
+          <RetroFrameCanvas className="bg-gray-100">
             <ThreeScene
               kioskId={spaceData.kioskId}
               enableGallery={true}
@@ -340,7 +341,7 @@ export default function SpaceEditPage() {
                 </RetroPanel>
               </div>
             )}
-          </div>
+          </RetroFrameCanvas>
 
           {/* Bottom Control Panel */}
           <RetroPanel className="p-4 rounded-none border-t">
@@ -376,3 +377,4 @@ export default function SpaceEditPage() {
     </div>
   );
 }
+

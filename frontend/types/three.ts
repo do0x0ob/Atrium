@@ -3,6 +3,7 @@
  */
 
 import { AtriumGallerySceneConfig } from '../lib/three/AtriumGalleryScene';
+import * as THREE from 'three';
 
 // Configuration for Three.js scene rendering
 export interface ThreeSceneConfig {
@@ -38,3 +39,15 @@ export interface Model3DItem {
   scale?: { x: number; y: number; z: number };
 }
 
+export interface ThreeSceneApi {
+  loadModel: (model: Model3DItem) => Promise<THREE.Group | null>;
+  loadModels: (models: Model3DItem[]) => Promise<THREE.Group[]>;
+  removeModel: (id: string) => void;
+  clearModels: () => void;
+  attachTransformControls: (object: THREE.Object3D) => void;
+  detachTransformControls: () => void;
+  setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void;
+  pickObject: (x: number, y: number) => THREE.Object3D | null;
+  getSceneState: () => any[];
+  canvas: HTMLCanvasElement | null;
+}

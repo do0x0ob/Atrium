@@ -180,6 +180,36 @@ export function useThreeScene(options: UseThreeSceneOptions = {}) {
     return sceneManagerRef.current?.getVideoScreenMesh();
   }, []);
 
+  // Weather system integration
+  const updateWeatherParams = useCallback((params: any) => {
+    sceneManagerRef.current?.updateWeatherParams(params);
+  }, []);
+
+  const getCurrentWeatherParams = useCallback(() => {
+    return sceneManagerRef.current?.getCurrentWeatherParams();
+  }, []);
+
+  // Transform controls
+  const attachTransformControls = useCallback((object: THREE.Object3D) => {
+    sceneManagerRef.current?.attachTransformControls(object);
+  }, []);
+
+  const detachTransformControls = useCallback(() => {
+    sceneManagerRef.current?.detachTransformControls();
+  }, []);
+
+  const setTransformMode = useCallback((mode: 'translate' | 'rotate' | 'scale') => {
+    sceneManagerRef.current?.setTransformMode(mode);
+  }, []);
+
+  const pickObject = useCallback((x: number, y: number) => {
+    return sceneManagerRef.current?.pickObject(x, y);
+  }, []);
+
+  const getSceneState = useCallback(() => {
+    return sceneManagerRef.current?.getSceneState() || [];
+  }, []);
+
   return {
     canvasRef,
     sceneManager: sceneManagerRef.current || undefined,
@@ -194,6 +224,13 @@ export function useThreeScene(options: UseThreeSceneOptions = {}) {
     getAudienceSeatPositions,
     getHolographicScreen,
     getVideoScreenMesh,
+    updateWeatherParams,
+    getCurrentWeatherParams,
+    attachTransformControls,
+    detachTransformControls,
+    setTransformMode,
+    pickObject,
+    getSceneState,
   };
 }
 

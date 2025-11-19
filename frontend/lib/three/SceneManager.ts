@@ -68,7 +68,7 @@ export class SceneManager {
 
     // Initialize gallery scene
     if (config.galleryScene) {
-      this.galleryScene = new AtriumGalleryScene(this.scene, config.galleryScene);
+      this.galleryScene = new AtriumGalleryScene(this.scene, config.galleryScene, this.camera);
     } else {
       // Fallback to basic background
       this.scene.background = new THREE.Color(config.backgroundColor || 0xe8f4f8);
@@ -353,5 +353,80 @@ export class SceneManager {
   getVideoScreenMesh() {
     return this.galleryScene?.getVideoScreenMesh();
   }
+
+  // Attach TransformControls to an object
+  attachTransformControls(object: THREE.Object3D) {
+    if (this.transformControls) {
+      this.transformControls.attach(object);
+    }
+  }
+
+  // Detach TransformControls
+  detachTransformControls() {
+    if (this.transformControls) {
+      this.transformControls.detach();
+    }
+  }
+
+  // Set TransformControls mode
+  setTransformMode(mode: 'translate' | 'rotate' | 'scale') {
+    if (this.transformControls) {
+      this.transformControls.setMode(mode);
+    }
+  }
+
+  // Pick object at normalized coordinates (-1 to +1)
+  pickObject(normalizedX: number, normalizedY: number): THREE.Object3D | null {
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(normalizedX, normalizedY), this.camera);
+
+    const intersects = raycaster.intersectObjects(this.scene.children, true);
+    
+    // Filter out TransformControls, grid, helpers, etc.
+    for (const intersect of intersects) {
+      let obj = intersect.object;
+      
+      // Traverse up to find the root group if it's a model
+      while (obj.parent && obj.parent !== this.scene) {
+        // If we hit a special object (like TransformControls), ignore it
+        if (obj.parent.type === 'TransformControls') return null;
+        obj = obj.parent;
+      }
+
+      // Ignore grid/lights/helpers if needed
+      if (obj.type === 'GridHelper' || obj.type === 'AxesHelper' || obj.type === 'Light') continue;
+      
+      return obj;
+    }
+    return null;
+  }
+
+  // Get scene objects (serialized for config)
+  getSceneState() {
+    const models = Array.from(this.loadedModels.entries()).map(([id, group]) => {
+      return {
+        id,
+        name: group.name,
+        position: { x: group.position.x, y: group.position.y, z: group.position.z },
+        rotation: { x: group.rotation.x, y: group.rotation.y, z: group.rotation.z },
+        scale: { x: group.scale.x, y: group.scale.y, z: group.scale.z },
+        // Note: URL is not stored in the Group directly, would need to be mapped back
+      };
+    });
+    return models;
+  }
+
+  // Update weather parameters (delegates to gallery scene)
+  updateWeatherParams(params: any) {
+    if (this.galleryScene) {
+      this.galleryScene.updateWeatherParams(params);
+    }
+  }
+
+  // Get current weather parameters
+  getCurrentWeatherParams() {
+    return this.galleryScene?.getCurrentWeatherParams();
+  }
 }
+
 

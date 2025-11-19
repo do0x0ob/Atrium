@@ -10,11 +10,7 @@ export class WalrusApiService {
       ? envPublishers.split(',').map(url => url.trim())
       : [
           'https://publisher.walrus-testnet.walrus.space',
-          'https://publisher.testnet.walrus.atalma.io',
-          'https://publisher.walrus-01.tududes.com',
-          'https://publisher.walrus.banansen.dev',
-          'https://testnet-publisher.walrus.graphyte.dev',
-          'https://walrus-pub.testnet.obelisk.sh'
+          'https://publisher.testnet.walrus.atalma.io'
         ];
 
     // 確保所有 URL 都是有效的
@@ -45,7 +41,7 @@ export class WalrusApiService {
   }
 
   // 上傳 blob，添加品質相關的 headers
-  async uploadBlob(fileBuffer: Buffer, epochs: string = '1', retryCount: number = 0): Promise<any> {
+  async uploadBlob(fileBuffer: Buffer, epochs: string = '50', retryCount: number = 0): Promise<any> {
     if (retryCount >= this.publisherUrls.length) {
       throw new Error('All publishers failed to respond');
     }
@@ -122,7 +118,7 @@ export class WalrusApiService {
   async handleFileUpload(formData: FormData, method: 'PUT' | 'POST' = 'POST') {
     try {
       const file = formData.get('data') || formData.get('file');
-      const epochs = formData.get('epochs')?.toString() || '1';
+      const epochs = formData.get('epochs')?.toString() || '50';
       
 
       if (!file || typeof file === 'string') {
@@ -156,10 +152,10 @@ export const walrusApi = new WalrusApiService();
 /**
  * Convenient helper function to upload a file or blob to Walrus
  * @param file - File or Blob to upload
- * @param epochs - Number of epochs to store (default: 1)
+ * @param epochs - Number of epochs to store (default: 50)
  * @returns Blob ID string
  */
-export async function uploadToWalrus(file: File | Blob, epochs: string = '1'): Promise<string> {
+export async function uploadToWalrus(file: File | Blob, epochs: string = '50'): Promise<string> {
   const fileBuffer = Buffer.from(await file.arrayBuffer());
   const result = await walrusApi.uploadBlob(fileBuffer, epochs);
   

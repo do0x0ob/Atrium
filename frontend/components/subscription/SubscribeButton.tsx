@@ -9,10 +9,11 @@ import { RetroButton } from "@/components/common/RetroButton";
 interface SubscribeButtonProps {
   spaceKioskId: string;
   price: string;
+  identityId: string | null;
   onSubscribed: () => void;
 }
 
-export function SubscribeButton({ spaceKioskId, price, onSubscribed }: SubscribeButtonProps) {
+export function SubscribeButton({ spaceKioskId, price, identityId, onSubscribed }: SubscribeButtonProps) {
   const currentAccount = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const [loading, setLoading] = useState(false);
@@ -23,13 +24,17 @@ export function SubscribeButton({ spaceKioskId, price, onSubscribed }: Subscribe
       alert("Please connect your wallet first");
       return;
     }
+    if (!identityId) {
+      alert("You need an Atrium Identity to subscribe. Please register first.");
+      return;
+    }
 
     try {
       setLoading(true);
 
-      const priceInMist = parseFloat(price) * MIST_PER_SUI;
+      const priceInMist = parseFloat(price);
       const tx = subscribeToSpace(
-        currentAccount.address, // TODO: Use actual identity ID
+        identityId,
         spaceKioskId,
         priceInMist,
         duration
@@ -116,12 +121,18 @@ export function SubscribeButton({ spaceKioskId, price, onSubscribed }: Subscribe
 
       <RetroButton
         onClick={handleSubscribe}
-        disabled={loading || !currentAccount}
+        disabled={loading || !currentAccount || !identityId}
         variant="primary"
         className="w-full"
       >
         {loading ? "Subscribing..." : "Subscribe Now"}
       </RetroButton>
+      
+      {!identityId && currentAccount && (
+        <p className="text-xs text-red-500 text-center">
+          Identity required to subscribe
+        </p>
+      )}
 
       <p className="text-xs text-gray-500 text-center leading-tight" style={{ fontFamily: 'Georgia, serif' }}>
         Your 3D avatar will appear in the creator's space after subscription
@@ -129,4 +140,3 @@ export function SubscribeButton({ spaceKioskId, price, onSubscribed }: Subscribe
     </div>
   );
 }
-

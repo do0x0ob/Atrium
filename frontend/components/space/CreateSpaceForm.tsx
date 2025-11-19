@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-kit";
+import { useState, useEffect } from "react";
+import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from "@mysten/dapp-kit";
 import { RetroPanel } from "@/components/common/RetroPanel";
 import { RetroButton } from "@/components/common/RetroButton";
 import { SpaceCategory } from "@/components/space/SpaceCategoryFilter";
 import { uploadToWalrus } from "@/services/walrusApi";
-import { initializeSpace, MIST_PER_SUI } from "@/utils/transactions";
+import { initializeSpace, MIST_PER_SUI, IDENTITY_PACKAGE_ID } from "@/utils/transactions";
 
 interface CreateSpaceFormData {
   name: string;
@@ -23,8 +23,10 @@ interface CreateSpaceFormProps {
 
 export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
   const currentAccount = useCurrentAccount();
+  const suiClient = useSuiClient();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const [loading, setLoading] = useState(false);
+  const [identityId, setIdentityId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<CreateSpaceFormData>({
     name: "",
@@ -33,6 +35,26 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
     tags: "",
     coverImage: null,
   });
+
+  useEffect(() => {
+    async function fetchIdentity() {
+      if (!currentAccount) return;
+      try {
+        const { data } = await suiClient.getOwnedObjects({
+          owner: currentAccount.address,
+          filter: { StructType: `${IDENTITY_PACKAGE_ID}::identity::Identity` },
+          options: { showContent: true }
+        });
+        
+        if (data.length > 0) {
+          setIdentityId(data[0].data?.objectId || null);
+        }
+      } catch (e) {
+        console.error("Failed to fetch identity", e);
+      }
+    }
+    fetchIdentity();
+  }, [currentAccount, suiClient]);
 
   // Category options
   const categoryOptions = [
@@ -47,6 +69,10 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
 
   const handleSubmit = async () => {
     if (!currentAccount || !formData.name) return;
+    if (!identityId) {
+      alert("You need an Identity NFT to create a space. Please register first.");
+      return;
+    }
 
     try {
       setLoading(true);
@@ -80,7 +106,7 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
       const initPriceInMist = 0.1 * MIST_PER_SUI;
       
       const tx = initializeSpace(
-        currentAccount.address, // TODO: Use actual identity ID
+        identityId,
         formData.name,
         formData.description,
         coverImageBlobId,
@@ -233,7 +259,7 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
               variant="primary"
               className="flex-1"
               onClick={handleSubmit}
-              disabled={loading || !formData.name}
+              disabled={loading || !formData.name || !identityId}
             >
               {loading ? "Creating..." : "Create Space"}
             </RetroButton>
@@ -243,6 +269,11 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
             <p className="text-xs text-gray-500" style={{ fontFamily: 'Georgia, serif' }}>
               Creating a space requires 0.1 SUI initialization fee
             </p>
+            {!identityId && (
+              <p className="text-xs text-red-500 mt-1">
+                Identity NFT required. Please register first.
+              </p>
+            )}
           </div>
         </div>
       </div>

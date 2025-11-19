@@ -1,7 +1,12 @@
 /**
- * Theme system for Atrium Stage
+ * Weather Mode System for Atrium Stage
+ * - dynamic: AI-generated weather based on crypto data (default)
+ * - day: Static sunny day mode
+ * - night: Static night mode
  */
+export type WeatherMode = 'dynamic' | 'day' | 'night';
 
+// Legacy type for backward compatibility
 export type StageTheme = 'light' | 'dark';
 
 export interface StageThemeConfig {
@@ -48,6 +53,62 @@ export interface StageThemeConfig {
   loadingTextColor: string;
   loadingSpinnerColors: string[];
 }
+
+/**
+ * Static weather configurations for day/night modes
+ */
+export const STATIC_WEATHER_CONFIGS = {
+  day: {
+    skyColor: '#f5f3ed',
+    fogDensity: 0.15,
+    fogColor: '#f5f3ed',
+    sunIntensity: 1.2,
+    sunColor: '#fff5e0',
+    ambientIntensity: 0.6,
+    weatherType: 'sunny' as const,
+    particleIntensity: 0.2,
+    windSpeed: 2,
+    cloudSpeed: 1,
+    mood: 'calm' as const,
+    waterEffect: 'calm' as const,
+    waterColor: '#4A90E2',
+    specialEvents: [] as string[],
+    islandState: 'normal' as const,
+    ambientEffects: ['birds_flying'] as string[],
+    effectIntensity: 0.3,
+    // Parametric elements - set to 0 to remove them in static modes
+    fishCount: 0,
+    floatingOrbCount: 0,
+    energyBeamIntensity: 0,
+    reasoning: 'Static day mode - calm and bright',
+    timestamp: Date.now(),
+  },
+  night: {
+    skyColor: '#0B1929',
+    fogDensity: 0.3,
+    fogColor: '#1a1a2e',
+    sunIntensity: 0.3,
+    sunColor: '#4A5B8C',
+    ambientIntensity: 0.3,
+    weatherType: 'clear' as const,
+    particleIntensity: 0.4,
+    windSpeed: 1,
+    cloudSpeed: 0.5,
+    mood: 'mysterious' as const,
+    waterEffect: 'calm' as const,
+    waterColor: '#1a2332',
+    specialEvents: [] as string[],
+    islandState: 'normal' as const,
+    ambientEffects: ['sparkles'] as string[],
+    effectIntensity: 0.4,
+    // Parametric elements - set to 0 to remove them in static modes
+    fishCount: 0,
+    floatingOrbCount: 0,
+    energyBeamIntensity: 0,
+    reasoning: 'Static night mode - peaceful and starry',
+    timestamp: Date.now(),
+  },
+};
 
 export const STAGE_THEMES: Record<StageTheme, StageThemeConfig> = {
   light: {

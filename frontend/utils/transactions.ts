@@ -2,8 +2,10 @@ import { Transaction } from "@mysten/sui/transactions";
 
 // Contract addresses - to be updated after deployment
 export const IDENTITY_PACKAGE_ID = process.env.NEXT_PUBLIC_IDENTITY_PACKAGE_ID || '';
+export const IDENTITY_REGISTRY_ID = process.env.NEXT_PUBLIC_IDENTITY_REGISTRY_ID || '';
 export const SPACE_PACKAGE_ID = process.env.NEXT_PUBLIC_SPACE_PACKAGE_ID || '';
 export const SUBSCRIPTION_PACKAGE_ID = process.env.NEXT_PUBLIC_SUBSCRIPTION_PACKAGE_ID || '';
+export const SUBSCRIPTION_REGISTRY_ID = process.env.NEXT_PUBLIC_SUBSCRIPTION_REGISTRY_ID || '';
 
 export const SUI_CLOCK = '0x6';
 export const MIST_PER_SUI = 1_000_000_000;
@@ -11,13 +13,16 @@ export const MIST_PER_SUI = 1_000_000_000;
 /**
  * Mint a new identity NFT
  */
-export const mintIdentity = (username: string, avatarBlobId: string) => {
+export const mintIdentity = (username: string, bio: string, avatarBlobId: string, imageBlobId: string) => {
   const tx = new Transaction();
   tx.moveCall({
     target: `${IDENTITY_PACKAGE_ID}::identity::mint_identity`,
     arguments: [
+      tx.object(IDENTITY_REGISTRY_ID),
       tx.pure.string(username),
+      tx.pure.string(bio),
       tx.pure.string(avatarBlobId),
+      tx.pure.string(imageBlobId),
       tx.object(SUI_CLOCK),
     ],
   });
@@ -25,7 +30,7 @@ export const mintIdentity = (username: string, avatarBlobId: string) => {
 };
 
 /**
- * Bind an avatar to an existing identity
+ * Bind an avatar to an existing identity (Update avatar)
  */
 export const bindAvatar = (identityId: string, avatarBlobId: string) => {
   const tx = new Transaction();
@@ -46,7 +51,10 @@ export const becomeCreator = (identityId: string) => {
   const tx = new Transaction();
   tx.moveCall({
     target: `${IDENTITY_PACKAGE_ID}::identity::become_creator`,
-    arguments: [tx.object(identityId)],
+    arguments: [
+      tx.object(IDENTITY_REGISTRY_ID),
+      tx.object(identityId)
+    ],
   });
   return tx;
 };

@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { StageThemeConfig } from '../../types/theme';
+import type { SceneWeatherParams } from '../../services/poeApi';
+import { SpecialEffectsManager } from './effects/SpecialEffects';
+import { WaterEffectsManager } from './effects/WaterEffects';
 
 export interface AtriumGallerySceneConfig {
   theme?: StageThemeConfig;
@@ -10,6 +13,7 @@ export interface AtriumGallerySceneConfig {
   enableParametricElements?: boolean;
   enableAudienceSeats?: boolean;
   stageStyle?: 'minimal' | 'ethereal' | 'abstract';
+  weatherParams?: SceneWeatherParams; // AI-generated weather params
 }
 
 export interface AudienceSeatPosition {
@@ -32,8 +36,16 @@ export class AtriumGalleryScene {
   private floatingOrbs: THREE.Mesh[] = []; // Decorative floating orbs
   private lightBeam?: THREE.Mesh; // Central light beam
   private holographicScreen?: THREE.Group; // Main holographic screen for video playback
+  private currentWeatherParams?: SceneWeatherParams; // Current weather params
+  private weatherParticles?: THREE.Points; // Weather particles (rain, snow, etc.)
+  private directionalLight?: THREE.DirectionalLight; // Main light reference
+  private ambientLight?: THREE.AmbientLight; // Ambient light reference
+  private effectsManager?: SpecialEffectsManager; // Effects manager
+  private waterManager?: WaterEffectsManager; // Water effects manager
+  private fishSchool: THREE.Mesh[] = []; // Swimming fish based on volume
+  private energyBeams: THREE.Mesh[] = []; // Energy beams based on momentum
 
-  constructor(scene: THREE.Scene, config: AtriumGallerySceneConfig = {}) {
+  constructor(scene: THREE.Scene, config: AtriumGallerySceneConfig = {}, camera?: THREE.Camera) {
     this.scene = scene;
     
     // Use theme config or fallback to defaults
@@ -56,6 +68,18 @@ export class AtriumGalleryScene {
     this.initializeAudienceSeatPositions(); // Initialize positions without creating visual seats
     this.createStageSpotlights(config.enableSpotlights);
     this.createAmbientParticles(config.enableAmbientParticles);
+    
+    // Initialize effects and water managers if camera is provided
+    if (camera) {
+      this.effectsManager = new SpecialEffectsManager(this.scene, camera);
+      console.log('✨ Special Effects Manager initialized');
+      
+      // Initialize water manager with existing water surface
+      if (this.waterSurface) {
+        this.waterManager = new WaterEffectsManager(this.scene, this.waterSurface);
+        console.log('🌊 Water Effects Manager initialized');
+      }
+    }
   }
 
   private initializeBackground() {
@@ -108,9 +132,14 @@ export class AtriumGalleryScene {
       
       // Connect center to first ring
       const firstRingSegments = Math.floor(segments * (1 / rings)) + 8;
+      const maxFirstRingVertex = vertexIndex + firstRingSegments - 1;
       for (let i = 0; i < firstRingSegments; i++) {
-        const next = (i + 1) % firstRingSegments;
-        indices.push(0, vertexIndex + i, vertexIndex + next);
+        const current = vertexIndex + i;
+        const next = vertexIndex + ((i + 1) % firstRingSegments);
+        // Validate indices are within bounds
+        if (current <= maxFirstRingVertex && next <= maxFirstRingVertex) {
+          indices.push(0, current, next);
+        }
       }
       vertexIndex += firstRingSegments;
       
@@ -1290,20 +1319,21 @@ export class AtriumGalleryScene {
   private createAmbientParticles(enabled = true) {
     if (!enabled) return;
 
-    const particleCount = this.theme.particleCount;
+    // Reduce particle count to make it sparser as requested
+    const particleCount = Math.floor(this.theme.particleCount * 0.3); 
     const particleGeometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
     const sizes = new Float32Array(particleCount);
 
     for (let i = 0; i < particleCount; i++) {
-      // Distribute particles closer to the stage for better visibility
-      const radius = 10 + Math.random() * 12;
+      // Distribute particles in a wider area and higher up
+      const radius = 15 + Math.random() * 20; // Widen radius (was 10+12)
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.random() * Math.PI;
 
       positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = Math.random() * 10 + 0.5;
+      positions[i * 3 + 1] = Math.random() * 15 + 5; // Lift up (was 0.5 to 10.5)
       positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
 
       // Use theme colors
@@ -1322,7 +1352,7 @@ export class AtriumGalleryScene {
     particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
     const particleMaterial = new THREE.PointsMaterial({
-      size: 0.18,
+      size: 0.3,
       vertexColors: true,
       transparent: true,
       opacity: this.theme.particleOpacity,
@@ -1352,17 +1382,31 @@ export class AtriumGalleryScene {
       this.ambientParticles.rotation.y += deltaTime * 0.015;
     }
 
-    // Water surface wave animation - handled separately to prevent rotation
-    if (this.waterSurface) {
-      const positionAttr = this.waterSurface.geometry.getAttribute('position');
-      for (let i = 0; i < positionAttr.count; i++) {
-        const x = positionAttr.getX(i);
-        const y = positionAttr.getY(i);
-        const wave = Math.sin(x * 0.15 + time * 0.4) * Math.cos(y * 0.15 + time * 0.25) * 0.2;
-        positionAttr.setZ(i, wave);
+    // Weather particles movement (rain, snow, etc.)
+    if (this.weatherParticles && this.weatherParticles.geometry.attributes.velocity) {
+      const positions = this.weatherParticles.geometry.attributes.position.array as Float32Array;
+      const velocities = this.weatherParticles.geometry.attributes.velocity.array as Float32Array;
+      
+      for (let i = 0; i < positions.length; i += 3) {
+        // Apply velocity
+        positions[i] += velocities[i] * deltaTime;
+        positions[i + 1] += velocities[i + 1] * deltaTime;
+        positions[i + 2] += velocities[i + 2] * deltaTime;
+        
+        // Reset particles that fall below ground
+        if (positions[i + 1] < -5) {
+          positions[i + 1] = 30 + Math.random() * 10;
+          positions[i] = (Math.random() - 0.5) * 60;
+          positions[i + 2] = (Math.random() - 0.5) * 60;
+        }
       }
-      positionAttr.needsUpdate = true;
-      this.waterSurface.geometry.computeVertexNormals();
+      
+      this.weatherParticles.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // Water surface wave animation - handled by water manager
+    if (this.waterManager) {
+      this.waterManager.update(deltaTime);
     }
 
     // Dynamic light variation
@@ -1403,10 +1447,12 @@ export class AtriumGalleryScene {
         this.theme.gridOpacity + Math.sin(time * 0.4) * (this.theme.gridOpacity * 0.15);
     }
 
-    // Parametric orbits rotation
+    // Parametric orbits rotation (affected by cloudSpeed)
+    const cloudSpeedMultiplier = this.currentWeatherParams?.cloudSpeed ?? 1.0;
     this.parametricElements.forEach((element) => {
       if (element.userData.rotationSpeed !== undefined) {
-        element.rotation.y += deltaTime * element.userData.rotationSpeed;
+        const adjustedSpeed = element.userData.rotationSpeed * (cloudSpeedMultiplier / 2.5); // cloudSpeed normal range 0-5
+        element.rotation.y += deltaTime * adjustedSpeed;
       }
     });
 
@@ -1435,14 +1481,16 @@ export class AtriumGalleryScene {
       });
     }
 
-    // Floating islands slow rotation
+    // Floating islands slow rotation (affected by windSpeed)
+    const windSpeedMultiplier = (this.currentWeatherParams?.windSpeed ?? 1.0) / 5; // Normalize to 0-2
     this.animatedElements.forEach((element) => {
       if (element instanceof THREE.Group && element.children.some(child => 
         child instanceof THREE.Mesh && child.geometry instanceof THREE.DodecahedronGeometry)) {
-        // Slow rotation for floating islands
-        element.rotation.y += deltaTime * 0.08;
-        // Gentle bobbing motion
-        element.position.y += Math.sin(time * 0.5 + element.position.x) * deltaTime * 0.15;
+        // Slow rotation for floating islands (wind speed effect)
+        element.rotation.y += deltaTime * 0.08 * (1 + windSpeedMultiplier);
+        // Gentle bobbing motion (higher wind = more movement)
+        const bobbingIntensity = 0.15 * (1 + windSpeedMultiplier * 0.5);
+        element.position.y += Math.sin(time * 0.5 + element.position.x) * deltaTime * bobbingIntensity;
       }
     });
 
@@ -1473,6 +1521,84 @@ export class AtriumGalleryScene {
         }
       }
     });
+
+    // Update special effects (meteors, aurora, lightning, etc.)
+    if (this.effectsManager) {
+      this.effectsManager.update(deltaTime);
+    }
+
+    // Water manager temporarily disabled to avoid conflicts
+    // if (this.waterManager) {
+    //   this.waterManager.update(deltaTime);
+    // }
+
+    // Animate fish school
+    this.fishSchool.forEach((fish) => {
+      const swimSpeed = (fish as any).swimSpeed || 0.5;
+      const swimRadius = (fish as any).swimRadius || 15;
+      const swimPhase = (fish as any).swimPhase || 0;
+      const verticalPhase = (fish as any).verticalPhase || 0;
+      const baseDepth = (fish as any).baseDepth || -21.5; // Use stored depth (below water surface)
+      
+      // Update swim angle (circular swimming pattern)
+      (fish as any).swimAngle += deltaTime * swimSpeed * 0.2;
+      const angle = (fish as any).swimAngle;
+      
+      // Circular swimming with gentle vertical bobbing
+      fish.position.x = Math.cos(angle) * swimRadius;
+      fish.position.z = Math.sin(angle) * swimRadius;
+      fish.position.y = baseDepth + Math.sin(time * swimSpeed + verticalPhase) * 0.15; // Gentle bobbing
+      
+      // Face swimming direction
+      fish.rotation.y = angle + Math.PI / 2;
+      
+      // Tail wiggle (subtle)
+      fish.rotation.z = Math.sin(time * 5 + swimPhase) * 0.1;
+    });
+
+    // Animate floating orbs
+    this.floatingOrbs.forEach((orb) => {
+      const floatSpeed = (orb as any).floatSpeed || 0.3;
+      const floatRadius = (orb as any).floatRadius || 15;
+      const floatHeight = (orb as any).floatHeight || 5;
+      const floatPhase = (orb as any).floatPhase || 0;
+      
+      // Update rotation around center
+      (orb as any).floatAngle += deltaTime * floatSpeed * 0.15;
+      const angle = (orb as any).floatAngle;
+      
+      // Circular orbit with vertical bobbing
+      orb.position.x = Math.cos(angle) * floatRadius;
+      orb.position.z = Math.sin(angle) * floatRadius;
+      orb.position.y = floatHeight + Math.sin(time * floatSpeed + floatPhase) * 1.5;
+      
+      // Gentle rotation
+      orb.rotation.y += deltaTime * 0.5;
+      orb.rotation.x += deltaTime * 0.3;
+      
+      // Pulsing emissive intensity
+      if (orb.material instanceof THREE.MeshStandardMaterial) {
+        orb.material.emissiveIntensity = 0.5 + Math.sin(time * 2 + floatPhase) * 0.3;
+      }
+    });
+
+    // Animate energy beams
+    this.energyBeams.forEach((beam) => {
+      const pulsePhase = (beam as any).pulsePhase || 0;
+      const pulseSpeed = (beam as any).pulseSpeed || 1.0;
+      
+      // Pulsing effect
+      beam.scale.y = 0.8 + Math.sin(time * pulseSpeed + pulsePhase) * 0.2;
+      
+      // Opacity pulsing
+      if (beam.material instanceof THREE.MeshBasicMaterial) {
+        const baseOpacity = beam.material.opacity;
+        beam.material.opacity = baseOpacity * (0.7 + Math.sin(time * pulseSpeed * 1.5 + pulsePhase) * 0.3);
+      }
+      
+      // Slight rotation
+      beam.rotation.y += deltaTime * 0.5;
+    });
   }
 
   // Get holographic screen for video texture attachment
@@ -1486,6 +1612,472 @@ export class AtriumGalleryScene {
     return this.holographicScreen.children.find(
       child => child instanceof THREE.Mesh && child.name === 'videoScreen'
     ) as THREE.Mesh | undefined;
+  }
+
+  /**
+   * Update scene weather params
+   * Dynamically adjust scene appearance based on AI-generated params
+   */
+  updateWeatherParams(params: SceneWeatherParams) {
+    console.log('🌤️ Updating scene weather:', {
+      weatherType: params.weatherType,
+      mood: params.mood,
+      skyColor: params.skyColor,
+      waterEffect: params.waterEffect,
+      waterColor: params.waterColor,
+      windSpeed: params.windSpeed,
+      cloudSpeed: params.cloudSpeed,
+      specialEvents: params.specialEvents,
+      islandState: params.islandState,
+      fogDensity: params.fogDensity,
+      particleIntensity: params.particleIntensity,
+    });
+
+    this.currentWeatherParams = params;
+
+    // 1. Update sky color
+    if (this.scene.background instanceof THREE.Color) {
+      const skyColor = new THREE.Color(params.skyColor);
+      this.scene.background.copy(skyColor);
+    }
+
+    // 2. Update fog
+    if (this.scene.fog) {
+      const fogColor = new THREE.Color(params.fogColor);
+      if (this.scene.fog instanceof THREE.Fog) {
+        this.scene.fog.color.copy(fogColor);
+        const baseFar = 70;
+        const baseNear = 25;
+        this.scene.fog.far = baseFar - (params.fogDensity * 30);
+        this.scene.fog.near = baseNear - (params.fogDensity * 15);
+      }
+    }
+
+    // 3. Update main light (sun)
+    this.scene.traverse((object) => {
+      if (object instanceof THREE.DirectionalLight && !this.directionalLight) {
+        this.directionalLight = object;
+      }
+      if (object instanceof THREE.AmbientLight && !this.ambientLight) {
+        this.ambientLight = object;
+      }
+    });
+
+    if (this.directionalLight) {
+      const sunColor = new THREE.Color(params.sunColor);
+      this.directionalLight.color.copy(sunColor);
+      this.directionalLight.intensity = params.sunIntensity;
+    }
+
+    if (this.ambientLight) {
+      this.ambientLight.intensity = params.ambientIntensity;
+    }
+
+    // 4. Update ambient particles intensity
+    if (this.ambientParticles && this.ambientParticles.material instanceof THREE.PointsMaterial) {
+      const baseOpacity = this.theme.particleOpacity;
+      this.ambientParticles.material.opacity = baseOpacity * (0.5 + params.particleIntensity * 0.5);
+    }
+
+    // 5. Create or update weather particles (rain, snow, etc.)
+    this.updateWeatherParticles(params);
+
+    // 6. Update scene mood
+    this.updateSceneMood(params);
+
+    // 7. Update water effects
+    if (this.waterManager) {
+      this.waterManager.updateEffect({
+        effectType: params.waterEffect as any,
+        waterColor: params.waterColor,
+        intensity: params.effectIntensity || 1.0
+      });
+      console.log('🌊 Water effect updated:', params.waterEffect, params.waterColor);
+    }
+
+    // 8. Update special effects
+    if (this.effectsManager) {
+      this.effectsManager.clearAll();
+      
+      if (params.specialEvents && params.specialEvents.length > 0) {
+        params.specialEvents.forEach(event => {
+          if (event !== 'none') {
+            this.effectsManager!.addEffect(event, params.effectIntensity || 1.0);
+          }
+        });
+        console.log('✨ Special effects updated:', params.specialEvents);
+      }
+    }
+
+    // 9. Update island state
+    if (params.islandState) {
+      this.updateIslandState(params.islandState);
+    }
+
+    // 10. Update parametric fish school
+    if (params.fishCount !== undefined) {
+      this.updateFishSchool(params.fishCount);
+    }
+
+    // 11. Update floating orbs
+    if (params.floatingOrbCount !== undefined) {
+      this.updateFloatingOrbs(params.floatingOrbCount);
+    }
+
+    // 12. Update energy beams
+    if (params.energyBeamIntensity !== undefined) {
+      this.updateEnergyBeams(params.energyBeamIntensity);
+    }
+
+    console.log('✅ Scene weather updated successfully');
+  }
+
+  /**
+   * Update weather particle system
+   */
+  private updateWeatherParticles(params: SceneWeatherParams) {
+    // Remove old weather particles
+    if (this.weatherParticles) {
+      this.scene.remove(this.weatherParticles);
+      this.weatherParticles.geometry.dispose();
+      if (this.weatherParticles.material instanceof THREE.PointsMaterial) {
+        this.weatherParticles.material.dispose();
+      }
+      this.weatherParticles = undefined;
+    }
+
+    // Create particles only for specific weather types
+    if (params.weatherType === 'rainy' || params.weatherType === 'snowy' || params.weatherType === 'stormy') {
+      const particleCount = Math.floor(params.particleIntensity * 2000);
+      if (particleCount > 0) {
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+
+        for (let i = 0; i < particleCount; i++) {
+          positions[i * 3] = (Math.random() - 0.5) * 60;
+          positions[i * 3 + 1] = Math.random() * 30 + 10;
+          positions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+
+          if (params.weatherType === 'snowy') {
+            velocities[i * 3 + 1] = -0.5 - Math.random() * 0.5;
+          } else {
+            velocities[i * 3 + 1] = -2 - Math.random() * 2;
+          }
+
+          velocities[i * 3] = (Math.random() - 0.5) * params.windSpeed * 0.1;
+          velocities[i * 3 + 2] = (Math.random() - 0.5) * params.windSpeed * 0.1;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+
+        const material = new THREE.PointsMaterial({
+          size: params.weatherType === 'snowy' ? 0.5 : 0.25,
+          color: params.weatherType === 'snowy' ? 0xffffff : 0xaaaaaa,
+          transparent: true,
+          opacity: params.particleIntensity * 0.8,
+          depthWrite: false,
+        });
+
+        this.weatherParticles = new THREE.Points(geometry, material);
+        this.scene.add(this.weatherParticles);
+      }
+    }
+  }
+
+  /**
+   * Adjust scene atmosphere based on mood
+   */
+  private updateSceneMood(params: SceneWeatherParams) {
+    this.spotlights.forEach((spotlight) => {
+      switch (params.mood) {
+        case 'energetic':
+          spotlight.intensity *= 1.3;
+          break;
+        case 'melancholic':
+          spotlight.intensity *= 0.7;
+          break;
+        case 'mysterious':
+          spotlight.intensity *= 0.8;
+          break;
+        case 'chaotic':
+          spotlight.intensity *= 1.5;
+          break;
+        default: // calm
+          break;
+      }
+    });
+
+    // Adjust animation speed based on mood
+    this.animatedElements.forEach((element) => {
+      if (!element.userData.baseMoodSpeed) {
+        element.userData.baseMoodSpeed = 1.0;
+      }
+      
+      switch (params.mood) {
+        case 'energetic':
+          element.userData.moodSpeedMultiplier = 1.5;
+          break;
+        case 'melancholic':
+          element.userData.moodSpeedMultiplier = 0.6;
+          break;
+        case 'chaotic':
+          element.userData.moodSpeedMultiplier = 2.0;
+          break;
+        default:
+          element.userData.moodSpeedMultiplier = 1.0;
+          break;
+      }
+    });
+  }
+
+  /**
+   * Update island state (glowing, smoking, frozen, burning)
+   */
+  private updateIslandState(state: 'normal' | 'glowing' | 'smoking' | 'frozen' | 'burning') {
+    console.log('🏝️ Updating island state:', state);
+    
+    const platform = this.scene.children.find(
+      child => child instanceof THREE.Mesh && child.geometry instanceof THREE.BufferGeometry
+    );
+    
+    if (!platform || !(platform instanceof THREE.Mesh)) return;
+    
+    switch (state) {
+      case 'glowing':
+        if (platform.material instanceof THREE.MeshStandardMaterial) {
+          platform.material.emissive.setHex(0xFFD700);
+          platform.material.emissiveIntensity = 0.5;
+        }
+        break;
+        
+      case 'smoking':
+        // TODO: Implement smoke particle system
+        console.log('💨 Smoking effect (TODO: implement smoke particles)');
+        break;
+        
+      case 'frozen':
+        if (platform.material instanceof THREE.MeshStandardMaterial) {
+          platform.material.color.setHex(0xB0E0E6);
+          platform.material.metalness = 0.8;
+          platform.material.roughness = 0.2;
+        }
+        break;
+        
+      case 'burning':
+        if (platform.material instanceof THREE.MeshStandardMaterial) {
+          platform.material.emissive.setHex(0xFF4500);
+          platform.material.emissiveIntensity = 0.8;
+        }
+        // TODO: Add fire particles
+        console.log('🔥 Burning effect (TODO: implement fire particles)');
+        break;
+        
+      case 'normal':
+      default:
+        if (platform.material instanceof THREE.MeshStandardMaterial) {
+          platform.material.emissive.setHex(0x000000);
+          platform.material.emissiveIntensity = 0;
+          platform.material.color.setHex(this.theme.platformColor || 0xd9f0f5);
+          platform.material.metalness = 0.1;
+          platform.material.roughness = 0.8;
+        }
+        break;
+    }
+  }
+
+  /**
+   * Update fish school based on trading volume
+   */
+  private updateFishSchool(fishCount: number) {
+    // Remove existing fish
+    this.fishSchool.forEach(fish => {
+      this.scene.remove(fish);
+      fish.geometry.dispose();
+      if (fish.material instanceof THREE.Material) {
+        fish.material.dispose();
+      }
+    });
+    this.fishSchool = [];
+
+    // If fishCount is 0, just clear and return
+    if (fishCount === 0) {
+      console.log(`🐟 Fish school cleared (count: 0)`);
+      return;
+    }
+
+    console.log(`🐟 Creating fish school: ${fishCount} fish`);
+
+    // Create new fish
+    const fishGeometry = new THREE.ConeGeometry(0.3, 0.8, 4);
+    fishGeometry.rotateZ(Math.PI / 2);
+
+    for (let i = 0; i < fishCount; i++) {
+      // Underwater colors - brighter for visibility
+      const hue = 0.55 + Math.random() * 0.1; // Cyan-Blue range
+      const saturation = 0.6 + Math.random() * 0.3; // Higher saturation
+      const lightness = 0.4 + Math.random() * 0.2; // Brighter
+      
+      const fishMaterial = new THREE.MeshPhongMaterial({
+        color: new THREE.Color().setHSL(hue, saturation, lightness),
+        shininess: 50,
+        emissive: new THREE.Color().setHSL(hue, saturation, 0.2), // Stronger glow
+        emissiveIntensity: 0.4,
+      });
+
+      const fish = new THREE.Mesh(fishGeometry, fishMaterial);
+
+      // Position fish in water (below surface at y=-20)
+      const angle = (i / fishCount) * Math.PI * 2;
+      const radius = 10 + Math.random() * 15;
+      const baseDepth = -20.5 - Math.random() * 2.5; // Below water: -20.5 to -23
+      
+      fish.position.set(
+        Math.cos(angle) * radius,
+        baseDepth,
+        Math.sin(angle) * radius
+      );
+
+      // Random rotation
+      fish.rotation.y = angle + Math.PI / 2;
+
+      // Store initial position and movement params
+      (fish as any).swimSpeed = 0.5 + Math.random() * 0.5;
+      (fish as any).swimRadius = radius;
+      (fish as any).swimAngle = angle;
+      (fish as any).swimPhase = Math.random() * Math.PI * 2;
+      (fish as any).verticalPhase = Math.random() * Math.PI * 2;
+      (fish as any).baseDepth = baseDepth; // Store base depth for animation
+
+      this.scene.add(fish);
+      this.fishSchool.push(fish);
+    }
+  }
+
+  /**
+   * Update floating orbs based on market activity
+   */
+  private updateFloatingOrbs(orbCount: number) {
+    // Remove existing extra orbs (keep the old ones and adjust count)
+    while (this.floatingOrbs.length > orbCount) {
+      const orb = this.floatingOrbs.pop();
+      if (orb) {
+        this.scene.remove(orb);
+        orb.geometry.dispose();
+        if (orb.material instanceof THREE.Material) {
+          orb.material.dispose();
+        }
+      }
+    }
+
+    console.log(`💫 Adjusting floating orbs: ${orbCount} orbs`);
+
+    // Add new orbs if needed
+    while (this.floatingOrbs.length < orbCount) {
+      const orbGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+      const orbMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(
+          Math.random(),
+          0.7,
+          0.6
+        ),
+        emissive: new THREE.Color().setHSL(
+          Math.random(),
+          0.8,
+          0.4
+        ),
+        emissiveIntensity: 0.5,
+        transparent: true,
+        opacity: 0.8,
+      });
+
+      const orb = new THREE.Mesh(orbGeometry, orbMaterial);
+
+      // Position around the central area
+      const angle = (this.floatingOrbs.length / orbCount) * Math.PI * 2;
+      const radius = 12 + Math.random() * 8;
+      orb.position.set(
+        Math.cos(angle) * radius,
+        3 + Math.random() * 6,
+        Math.sin(angle) * radius
+      );
+
+      // Store animation params
+      (orb as any).floatSpeed = 0.3 + Math.random() * 0.3;
+      (orb as any).floatRadius = radius;
+      (orb as any).floatAngle = angle;
+      (orb as any).floatHeight = orb.position.y;
+      (orb as any).floatPhase = Math.random() * Math.PI * 2;
+
+      this.scene.add(orb);
+      this.floatingOrbs.push(orb);
+    }
+  }
+
+  /**
+   * Update energy beams based on price momentum
+   */
+  private updateEnergyBeams(intensity: number) {
+    // Remove existing beams
+    this.energyBeams.forEach(beam => {
+      this.scene.remove(beam);
+      beam.geometry.dispose();
+      if (beam.material instanceof THREE.Material) {
+        beam.material.dispose();
+      }
+    });
+    this.energyBeams = [];
+
+    if (intensity < 0.1) {
+      console.log('⚡ No energy beams (intensity too low)');
+      return;
+    }
+
+    console.log(`⚡ Creating energy beams with intensity: ${intensity.toFixed(2)}`);
+
+    // Create 3-5 vertical energy beams
+    const beamCount = Math.floor(3 + intensity * 2);
+    const beamGeometry = new THREE.CylinderGeometry(0.4, 0.4, 15, 8);
+
+    for (let i = 0; i < beamCount; i++) {
+      const beamMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color().setHSL(
+          0.15 + Math.random() * 0.1, // Yellow-orange
+          1.0,
+          0.6 + intensity * 0.3
+        ),
+        transparent: true,
+        opacity: 0.5 + intensity * 0.5,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      });
+
+      const beam = new THREE.Mesh(beamGeometry, beamMaterial);
+
+      // Position around the scene
+      const angle = (i / beamCount) * Math.PI * 2;
+      const radius = 8 + Math.random() * 5;
+      beam.position.set(
+        Math.cos(angle) * radius,
+        7.5,
+        Math.sin(angle) * radius
+      );
+
+      // Store animation params
+      (beam as any).pulsePhase = Math.random() * Math.PI * 2;
+      (beam as any).pulseSpeed = 1 + intensity;
+
+      this.scene.add(beam);
+      this.energyBeams.push(beam);
+    }
+  }
+
+  /**
+   * Get current weather params
+   */
+  getCurrentWeatherParams(): SceneWeatherParams | undefined {
+    return this.currentWeatherParams;
   }
 
   dispose() {
@@ -1508,6 +2100,18 @@ export class AtriumGalleryScene {
       }
     });
     this.spotlights = [];
+
+    // Clean up special effects manager
+    if (this.effectsManager) {
+      this.effectsManager.dispose();
+      this.effectsManager = undefined;
+    }
+
+    // Water manager cleanup
+    if (this.waterManager) {
+      this.waterManager.dispose();
+      this.waterManager = undefined;
+    }
   }
 }
 

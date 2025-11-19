@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useCurrentAccount } from "@mysten/dapp-kit";
+import { useCurrentAccount, useSuiClient } from "@mysten/dapp-kit";
 import { ThreeScene } from "@/components/3d/ThreeScene";
-import { ThemeToggle } from "@/components/3d/ThemeToggle";
-import { StageTheme } from "@/types/theme";
+import { WeatherModeToggle } from "@/components/3d/WeatherModeToggle";
+import { RetroFrameCanvas } from "@/components/3d/RetroFrameCanvas";
+import { WeatherMode } from "@/types/theme";
 import { SubscribeButton } from "@/components/subscription/SubscribeButton";
 import { RetroPanel } from "@/components/common/RetroPanel";
 import { RetroButton } from "@/components/common/RetroButton";
@@ -14,6 +15,13 @@ import { SpaceTabNavigation } from "./SpaceTabNavigation";
 import { getAccessStatus } from "./AccessStatusIndicator";
 import { ContentList } from "./ContentList";
 import { ContentItemData } from "./ContentItem";
+import { IDENTITY_PACKAGE_ID, SUBSCRIPTION_PACKAGE_ID } from "@/utils/transactions";
+
+// Window Manager
+import { useWindowManager } from "@/components/features/window-manager";
+import Window from "@/components/features/window-manager/components/Window";
+import { VideoWindow } from "@/components/windows/VideoWindow";
+import { EssayWindow } from "@/components/windows/EssayWindow";
 
 interface SpaceDetailProps {
   space: {
@@ -31,11 +39,37 @@ interface SpaceDetailProps {
 export function SpaceDetail({ space }: SpaceDetailProps) {
   const router = useRouter();
   const currentAccount = useCurrentAccount();
+  const suiClient = useSuiClient();
   const [activeTab, setActiveTab] = useState<"merch" | "video" | "essay" | "subscribe">("merch");
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [identityId, setIdentityId] = useState<string | null>(null);
   const [isContentMenuOpen, setIsContentMenuOpen] = useState(false);
   const [showSubscribeForm, setShowSubscribeForm] = useState(false);
-  const [theme, setTheme] = useState<StageTheme>('light');
+  const [weatherMode, setWeatherMode] = useState<WeatherMode>('dynamic');
+
+  // Window Manager
+  const {
+    windows,
+    activeWindowId,
+    openWindow,
+    closeWindow,
+    activateWindow,
+    startDragging,
+    resizeWindow,
+  } = useWindowManager();
+
+  // 檢測手機版
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const isCreator = currentAccount?.address === space.creator;
   const accessStatus = getAccessStatus(currentAccount, isSubscribed, isCreator);
@@ -54,13 +88,51 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
     ? [...contentTabs, subscribeTab]
     : contentTabs;
 
+  // Fetch Identity and Subscription Status
+  useEffect(() => {
+    async function checkStatus() {
+      if (!currentAccount) return;
+
+      try {
+        // 1. Get Identity
+        const { data: identityData } = await suiClient.getOwnedObjects({
+          owner: currentAccount.address,
+          filter: { StructType: `${IDENTITY_PACKAGE_ID}::identity::Identity` },
+        });
+        
+        if (identityData.length > 0) {
+          setIdentityId(identityData[0].data?.objectId || null);
+        }
+
+        // 2. Check Subscription
+        const { data: subscriptionData } = await suiClient.getOwnedObjects({
+          owner: currentAccount.address,
+          filter: { StructType: `${SUBSCRIPTION_PACKAGE_ID}::subscription::Subscription` },
+          options: { showContent: true }
+        });
+
+        // Filter for subscription to this specific space kiosk
+        const hasSubscription = subscriptionData.some(sub => {
+          const content = sub.data?.content as any;
+          return content?.fields?.space_kiosk_id === space.kioskId;
+        });
+
+        setIsSubscribed(hasSubscription);
+
+      } catch (e) {
+        console.error("Failed to check status", e);
+      }
+    }
+
+    checkStatus();
+  }, [currentAccount, suiClient, space.kioskId]);
+
   const handleJoinAtrium = () => {
     router.push("/");
   };
 
   const handleSubscribe = () => {
     setActiveTab("merch");
-    // Focus on subscription area
   };
 
   const handleEditSpace = () => {
@@ -94,6 +166,8 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
       price: 0,
       type: "video",
       isLocked: false,
+      // Mock blobId
+      // blobId: "..."
     },
     {
       id: "video-2",
@@ -137,7 +211,33 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
 
   const handleViewContent = (itemId: string) => {
     console.log("View content:", itemId);
-    // TODO: Open content viewer
+    const item = contentItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    // Open appropriate window with item data
+    if (item.type === 'video') {
+      openWindow('video-player', {
+        title: item.title,
+        data: {
+          blobId: item.id,
+          resourceId: item.id,
+          title: item.title,
+          isLocked: item.isLocked,
+        }
+      });
+    } else if (item.type === 'essay') {
+      openWindow('essay-reader', {
+        title: item.title,
+        data: {
+          blobId: item.id,
+          resourceId: item.id,
+          title: item.title,
+          isLocked: item.isLocked,
+        }
+      });
+    }
+    
+    setIsContentMenuOpen(false);
   };
 
   const handleShare = async () => {
@@ -155,6 +255,64 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
 
   return (
     <div className="h-screen bg-gray-100 flex flex-col overflow-hidden" style={{ fontFamily: 'Georgia, serif' }}>
+      
+      {/* Windows Layer */}
+      {Object.values(windows)
+        .filter(window => {
+          // 手機版只顯示當前激活的視窗，避免多個全屏視窗重疊
+          if (isMobile) {
+            return window.id === activeWindowId;
+          }
+          // 桌面版顯示所有視窗
+          return true;
+        })
+        .map(window => {
+          // Determine content for window based on type
+          let content = null;
+
+          if (window.type === 'video-player') {
+            content = (
+              <VideoWindow 
+                blobId={window.data?.blobId}
+                resourceId={window.data?.resourceId}
+                title={window.data?.title}
+                isLocked={window.data?.isLocked}
+              />
+            );
+          } else if (window.type === 'essay-reader') {
+            content = (
+              <EssayWindow
+                blobId={window.data?.blobId}
+                resourceId={window.data?.resourceId}
+                title={window.data?.title}
+                isLocked={window.data?.isLocked}
+              />
+            );
+          }
+
+          if (!content) return null;
+
+          return (
+            <Window
+              key={window.id}
+              id={window.id}
+              title={window.title}
+              position={window.position}
+              size={window.size}
+              isActive={activeWindowId === window.id}
+              zIndex={window.zIndex}
+              onClose={closeWindow}
+              onDragStart={startDragging}
+              onResize={resizeWindow}
+              onClick={() => activateWindow(window.id)}
+              resizable={window.resizable}
+            >
+              {content}
+            </Window>
+          );
+        })
+      }
+
       {/* Main Content Area - Full Height */}
       <div className="flex flex-col-reverse lg:flex-row flex-1 overflow-hidden">
         
@@ -179,6 +337,7 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
                       <SubscribeButton
                         spaceKioskId={space.kioskId}
                         price={space.subscriptionPrice}
+                        identityId={identityId}
                         onSubscribed={() => {
                           setIsSubscribed(true);
                           setActiveTab("merch");
@@ -313,6 +472,7 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
                   <SubscribeButton
                     spaceKioskId={space.kioskId}
                     price={space.subscriptionPrice}
+                    identityId={identityId}
                     onSubscribed={() => {
                       setIsSubscribed(true);
                       setShowSubscribeForm(false);
@@ -370,9 +530,8 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
               </div>
               
               <div className="flex items-center gap-2 flex-shrink-0">
-                <ThemeToggle currentTheme={theme} onThemeChange={setTheme} />
+                <WeatherModeToggle currentMode={weatherMode} onModeChange={setWeatherMode} />
                 
-                {/* Divider */}
                 <div className="h-6 w-px bg-gray-300" />
                 
                 <RetroButton
@@ -398,17 +557,17 @@ export function SpaceDetail({ space }: SpaceDetailProps) {
           </div>
           
           {/* 3D Canvas */}
-          <div className="flex-1 relative" style={{ backgroundColor: '#e8f4f8' }}>
+          <RetroFrameCanvas className="bg-gray-100">
             <ThreeScene
               kioskId={space.kioskId}
               enableGallery={true}
-              theme={theme}
+              weatherMode={weatherMode}
+              onWeatherModeChange={setWeatherMode}
             />
-          </div>
+          </RetroFrameCanvas>
 
         </div>
       </div>
     </div>
   );
 }
-

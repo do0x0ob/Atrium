@@ -1,18 +1,17 @@
 /**
- * Seal Video Encryption Service
- * Handles encryption and decryption of video files for subscription-based access
+ * Seal Content Encryption Service
+ * Handles encryption and decryption of content (video, text/markdown) for subscription-based access
  */
 
 import { SealClient, DemType, SessionKey } from '@mysten/seal';
-import { useCurrentAccount } from '@mysten/dapp-kit';
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
-import { fromHex, fromHEX } from '@mysten/sui/utils';
+import { fromHex } from '@mysten/sui/utils';
 import { SEAL_CONFIG, getSealKeyServers } from '@/config/seal';
 import { sealApproveBySubscription } from '@/utils/transactions';
 
 type SuiJsonRpcClient = any;
 
-export interface VideoEncryptionResult {
+export interface ContentEncryptionResult {
   encryptedBlob: Blob;
   resourceId: string;
   metadata: {
@@ -20,12 +19,14 @@ export interface VideoEncryptionResult {
     originalSize: number;
     encryptedSize: number;
     encryptionDate: string;
+    contentType: string; // 'video/mp4', 'text/markdown', etc.
   };
 }
 
-export interface VideoEncryptionOptions {
+export interface ContentEncryptionOptions {
   spaceKioskId: string;
-  videoTitle?: string;
+  title?: string;
+  contentType?: string; // MIME type
 }
 
 let sealClientInstance: SealClient | null = null;
@@ -38,7 +39,7 @@ function getSealClient(network: 'testnet' | 'mainnet' = 'testnet'): SealClient {
       weight: server.weight,
     }));
 
-    console.log('🔐 Initializing Seal Client for video encryption');
+    console.log('🔐 Initializing Seal Client for content encryption');
 
     const suiClient = new SuiClient({ 
       url: getFullnodeUrl(network) 
@@ -56,27 +57,29 @@ function getSealClient(network: 'testnet' | 'mainnet' = 'testnet'): SealClient {
 }
 
 /**
- * Encrypt a video file using Seal SDK with SessionKey
+ * Encrypt content file using Seal SDK with SessionKey
  * This allows subscription-based access control
  */
-export async function encryptVideo(
-  file: File,
-  options: VideoEncryptionOptions,
+export async function encryptContent(
+  file: File | Blob,
+  options: ContentEncryptionOptions,
   userAddress: string,
   signPersonalMessage: (message: Uint8Array) => Promise<{ signature: string }>,
   network: 'testnet' | 'mainnet' = 'testnet'
-): Promise<VideoEncryptionResult> {
+): Promise<ContentEncryptionResult> {
   try {
-    console.log('🔐 Encrypting video with Seal...', {
-      fileName: file.name,
+    console.log('🔐 Encrypting content with Seal...', {
       fileSize: file.size,
       spaceKioskId: options.spaceKioskId,
+      contentType: options.contentType || file.type
     });
+
+    const contentType = options.contentType || file.type;
 
     // Check if Seal is enabled
     if (!SEAL_CONFIG.enabled) {
       console.warn('⚠️ Seal is disabled, returning unencrypted');
-      const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+      const blob = new Blob([await file.arrayBuffer()], { type: contentType });
       return {
         encryptedBlob: blob,
         resourceId: `unencrypted_${Date.now()}`,
@@ -85,6 +88,7 @@ export async function encryptVideo(
           originalSize: file.size,
           encryptedSize: blob.size,
           encryptionDate: new Date().toISOString(),
+          contentType,
         },
       };
     }
@@ -95,9 +99,8 @@ export async function encryptVideo(
 
     // Prepare metadata
     const metadata = {
-      fileName: file.name,
-      fileType: file.type,
-      videoTitle: options.videoTitle || file.name,
+      fileType: contentType,
+      title: options.title || 'Untitled',
       timestamp: Date.now(),
       spaceKioskId: options.spaceKioskId,
     };
@@ -120,16 +123,10 @@ export async function encryptVideo(
     const { signature } = await signPersonalMessage(message);
     sessionKey.setPersonalMessageSignature(signature);
 
-    console.log('🔐 Encrypting with Seal SDK...', {
-      dataSize: fileData.length,
-      packageId: PACKAGE_ID,
-      resourceId,
-      userAddress,
-    });
-
     // Get SealClient and encrypt
-    // For large video files, Seal recommends using AES-GCM for best performance
     const sealClient = getSealClient(network);
+    
+    // Use AES-GCM for better performance on larger files
     const { encryptedObject } = await sealClient.encrypt({
       demType: DemType.AesGcm256,
       threshold: 1,
@@ -141,7 +138,7 @@ export async function encryptVideo(
 
     const encryptedBlob = new Blob([encryptedObject], { type: 'application/octet-stream' });
 
-    console.log('✅ Video encryption completed', {
+    console.log('✅ Content encryption completed', {
       resourceId,
       originalSize: file.size,
       encryptedSize: encryptedBlob.size,
@@ -155,13 +152,14 @@ export async function encryptVideo(
         originalSize: file.size,
         encryptedSize: encryptedBlob.size,
         encryptionDate: new Date().toISOString(),
+        contentType,
       },
     };
   } catch (error) {
-    console.error('❌ Video encryption failed:', error);
+    console.error('❌ Content encryption failed:', error);
     
     // Fallback to unencrypted
-    const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+    const blob = new Blob([await file.arrayBuffer()], { type: options.contentType || file.type });
     return {
       encryptedBlob: blob,
       resourceId: `fallback_${Date.now()}`,
@@ -170,24 +168,26 @@ export async function encryptVideo(
         originalSize: file.size,
         encryptedSize: blob.size,
         encryptionDate: new Date().toISOString(),
+        contentType: options.contentType || file.type,
       },
     };
   }
 }
 
 /**
- * Decrypt a video file using Seal SDK with SessionKey
+ * Decrypt content using Seal SDK with SessionKey
  * Requires valid subscription
  */
-export async function decryptVideo(
+export async function decryptContent(
   encryptedData: Uint8Array,
   resourceId: string,
   userAddress: string,
   signPersonalMessage: (message: Uint8Array) => Promise<{ signature: string }>,
-  network: 'testnet' | 'mainnet' = 'testnet'
+  network: 'testnet' | 'mainnet' = 'testnet',
+  expectedContentType: string = 'application/octet-stream'
 ): Promise<Blob> {
   try {
-    console.log('🔓 Decrypting video with Seal...', {
+    console.log('🔓 Decrypting content with Seal...', {
       dataSize: encryptedData.length,
       resourceId,
       userAddress,
@@ -224,55 +224,64 @@ export async function decryptVideo(
       sessionKey,
     });
 
-    const videoBlob = new Blob([new Uint8Array(decryptedData)], { type: 'video/mp4' });
+    const blob = new Blob([new Uint8Array(decryptedData)], { type: expectedContentType });
 
-    console.log('✅ Video decryption completed', {
-      decryptedSize: videoBlob.size,
+    console.log('✅ Content decryption completed', {
+      decryptedSize: blob.size,
+      type: expectedContentType
     });
 
-    return videoBlob;
+    return blob;
   } catch (error) {
-    console.error('❌ Video decryption failed:', error);
-    throw new Error('Failed to decrypt video. Please ensure you have an active subscription.');
+    console.error('❌ Content decryption failed:', error);
+    throw new Error('Failed to decrypt content. Please ensure you have an active subscription.');
   }
 }
 
 /**
- * Download and decrypt video from Walrus
+ * Download and decrypt content from Walrus
  */
-export async function downloadAndDecryptVideo(
+export async function downloadAndDecryptContent(
   blobId: string,
   resourceId: string,
   userAddress: string,
   signPersonalMessage: (message: Uint8Array) => Promise<{ signature: string }>,
+  contentType: string,
   network: 'testnet' | 'mainnet' = 'testnet'
 ): Promise<string> {
   try {
-    // Download encrypted video from Walrus
+    // Download encrypted content from Walrus
+    // Using aggregator URL
+    const aggregatorUrl = process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR || "https://aggregator.walrus-testnet.walrus.space";
     const response = await fetch(
-      `https://aggregator.walrus-testnet.walrus.space/v1/blobs/${blobId}`
+      `${aggregatorUrl}/v1/blobs/${blobId}`
     );
     
     if (!response.ok) {
-      throw new Error('Failed to download video from Walrus');
+      throw new Error('Failed to download content from Walrus');
     }
 
     const encryptedData = new Uint8Array(await response.arrayBuffer());
 
-    // Decrypt video
-    const decryptedBlob = await decryptVideo(
+    // Decrypt content
+    const decryptedBlob = await decryptContent(
       encryptedData,
       resourceId,
       userAddress,
       signPersonalMessage,
-      network
+      network,
+      contentType
     );
 
-    // Create object URL for video playback
-    const videoUrl = URL.createObjectURL(decryptedBlob);
-    return videoUrl;
+    // Create object URL for playback/display
+    if (contentType === 'text/markdown' || contentType === 'text/plain') {
+       return await decryptedBlob.text();
+    }
+    
+    const url = URL.createObjectURL(decryptedBlob);
+    return url;
   } catch (error) {
-    console.error('Error downloading and decrypting video:', error);
+    console.error('Error downloading and decrypting content:', error);
     throw error;
   }
 }
