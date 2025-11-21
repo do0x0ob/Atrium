@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { WindowType, WindowPosition, WindowManagerState, WindowInstance } from '../types';
+import { WindowType, WindowPosition, WindowManagerState, WindowInstance } from '@/types/window';
 import { defaultWindowConfigs } from '@/config/windows';
 
 /**

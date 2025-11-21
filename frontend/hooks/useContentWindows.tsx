@@ -4,8 +4,8 @@
  */
 
 import React from 'react';
-import { useWindowManager } from '@/components/features/window-manager';
-import Window from '@/components/features/window-manager/components/Window';
+import { useWindowManager } from '@/hooks/useWindowManager';
+import Window from '@/components/windows/Window';
 import { EssayWindow } from '@/components/windows/EssayWindow';
 import { VideoWindow } from '@/components/windows/VideoWindow';
 

@@ -41,22 +41,19 @@ export function ContentManager({ spaceId, ownershipId, onContentUpdate }: Conten
   return (
     <div className="h-full flex flex-col -mx-4 -mt-4">
       {/* Tabs and Actions Header */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-200">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex gap-2">
+      <div className="flex-shrink-0 bg-gray-50 border-b" style={{ borderColor: '#d1d5db' }}>
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex">
             {tabs.map((tab) => (
-              <button
+              <RetroButton
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                style={{ fontFamily: 'Georgia, serif' }}
+                variant={activeTab === tab.id ? 'primary' : 'secondary'}
+                size="sm"
+                className="rounded-none border-r last:border-r-0"
               >
                 {tab.label}
-              </button>
+              </RetroButton>
             ))}
           </div>
 
@@ -96,7 +93,7 @@ export function ContentManager({ spaceId, ownershipId, onContentUpdate }: Conten
                       <p className="text-xs text-gray-600 mb-2" style={{ fontFamily: 'Georgia, serif' }}>
                         {content.description}
                       </p>
-                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                      <div className="flex items-center gap-3 text-xs text-gray-500" style={{ fontFamily: 'Georgia, serif' }}>
                         <span>{content.encrypted ? '🔒 Encrypted' : '🔓 Public'}</span>
                         <span>•</span>
                         <span>
@@ -110,6 +107,7 @@ export function ContentManager({ spaceId, ownershipId, onContentUpdate }: Conten
                       variant="secondary"
                       size="sm"
                       className="ml-4"
+                      disabled={true}
                     >
                       Delete
                     </RetroButton>

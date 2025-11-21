@@ -23,8 +23,11 @@ import { updateSpaceConfig, SUI_CHAIN } from '@/utils/transactions';
 import { ObjectTransform } from '@/types/spaceEditor';
 import { Model3DItem } from '@/types/three';
 import { getWalrusBlobUrl } from '@/config/walrus';
-import { useSpaceContents } from '@/hooks/useSpaceContents';
+
+// Custom Hooks
 import { useContentWindows } from '@/hooks/useContentWindows';
+import { useSpaceViewMode } from '@/hooks/useSpaceViewMode';
+import { useSpaceContent } from '@/hooks/useSpaceContent';
 
 export function SpacePreviewWindow() {
   const currentAccount = useCurrentAccount();
@@ -32,9 +35,11 @@ export function SpacePreviewWindow() {
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const { spaces: userSpaces, loading, refetch } = useUserSpaces();
   
-  // Window Manager
+  // Custom Hooks
   const { openEssay, openVideo, renderWindows } = useContentWindows();
+  const { viewMode, setViewMode } = useSpaceViewMode('landing'); // Creator defaults to landing
   
+  // UI State
   const [selectedSpace, setSelectedSpace] = useState<UserSpaceData | null>(
     userSpaces.length > 0 ? userSpaces[0] : null
   );
@@ -43,23 +48,10 @@ export function SpacePreviewWindow() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [activeEditTab, setActiveEditTab] = useState<'nfts' | 'content' | 'screen'>('nfts');
-  const [viewMode, setViewMode] = useState<'3d' | 'landing'>('landing');
   const [showUploadWindow, setShowUploadWindow] = useState(false);
   
-  // Load real content data
-  const { contents: spaceContents } = useSpaceContents(selectedSpace?.spaceId || null);
-  const contentItems = spaceContents
-    .filter(c => c.type !== 'image') // ContentItemData doesn't support 'image' type
-    .map(c => ({
-      id: c.id,
-      title: c.title,
-      description: c.description,
-      type: c.type as 'video' | 'essay' | 'merch',
-      blobId: c.blobId,
-      isLocked: c.encrypted,
-      price: c.price,
-      sealResourceId: c.sealResourceId, // Pass Seal resourceId for decryption
-    }));
+  // Content data from custom hook
+  const { contentItems } = useSpaceContent(selectedSpace?.spaceId || null);
   
   // Derived states from editorState are calculated below
   const [screenConfig, setScreenConfig] = useState<SpaceScreenConfig>({ 
@@ -157,7 +149,7 @@ export function SpacePreviewWindow() {
   };
 
   const handleViewContent = (itemId: string) => {
-    const content = spaceContents.find(c => c.id === itemId);
+    const content = contentItems.find(c => c.id === itemId);
     if (!content) {
       console.error('Content not found:', itemId);
       return;
@@ -165,26 +157,16 @@ export function SpacePreviewWindow() {
 
     const spaceId = selectedSpace?.spaceId || '';
     
-    console.log('🔍 [SpacePreviewWindow] Opening content window:', {
-      contentId: content.id,
-      contentType: content.type,
-      blobId: content.blobId,
-      spaceId,
-      spaceIdFromSpace: selectedSpace?.spaceId,
-      selectedSpaceName: selectedSpace?.name,
-    });
-    
     if (!spaceId || spaceId === '') {
       alert('Cannot open content: Space ID is missing');
       return;
     }
 
     // Open appropriate window based on content type
-    // Open content window
-    if (content.type === 'video') {
-      openVideo(content.blobId, spaceId, content.title, content.encrypted || false);
-    } else if (content.type === 'essay') {
-      openEssay(content.blobId, spaceId, content.title, content.encrypted || false);
+    if (content.type === 'video' && content.blobId) {
+      openVideo(content.blobId, spaceId, content.title, content.isLocked || false);
+    } else if (content.type === 'essay' && content.blobId) {
+      openEssay(content.blobId, spaceId, content.title, content.isLocked || false);
     }
   };
 

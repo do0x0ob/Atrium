@@ -557,8 +557,11 @@ export default function SpaceEditPage() {
               />
             </div>
           )}
-          {activeTab === 'content' && (
-            <ContentManager spaceId={spaceId} />
+          {activeTab === 'content' && ownershipNFT && (
+            <ContentManager 
+              spaceId={spaceId} 
+              ownershipId={ownershipNFT.ownershipId}
+            />
           )}
           {activeTab === 'settings' && (
             <div className="h-full overflow-y-auto p-4">
@@ -609,7 +612,12 @@ export default function SpaceEditPage() {
               availableContent={[]}
             />
             
-            <ContentManager spaceId={spaceId} />
+            {ownershipNFT && (
+              <ContentManager 
+                spaceId={spaceId} 
+                ownershipId={ownershipNFT.ownershipId}
+              />
+            )}
           </div>
         </div>
       </div>

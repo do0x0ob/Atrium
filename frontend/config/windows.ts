@@ -1,4 +1,4 @@
-import { WindowType, WindowConfig } from '@/components/features/window-manager/types';
+import { WindowType, WindowConfig } from '@/types/window';
 
 export const defaultWindowConfigs: Record<WindowType, WindowConfig> = {
   'video-player': {

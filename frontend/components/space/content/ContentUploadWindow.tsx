@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { RetroWindow } from '@/components/common/RetroWindow';
 import { RetroButton } from '@/components/common/RetroButton';
@@ -12,6 +12,7 @@ import {
   RetroToggle 
 } from '@/components/common/RetroForm';
 import { useContentUpload } from '@/hooks/useContentUpload';
+import { useWindowPosition } from '@/hooks/useWindowPosition';
 import { saveContent, StoredContent, dispatchContentUpdateEvent } from '@/utils/contentStorage';
 import { recordContent } from '@/utils/transactions';
 
@@ -66,26 +67,15 @@ export function ContentUploadWindow({
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const { upload: uploadContent } = useContentUpload();
   
-  const [windowState, setWindowState] = useState({
-    mounted: false,
-    position: initialPosition,
-    size: initialWindowSize
-  });
-
-  // Calculate center position on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-        const x = (window.innerWidth - initialWindowSize.width) / 2;
-        const y = Math.max(50, (window.innerHeight - initialWindowSize.height) / 4); 
-        setWindowState({
-            mounted: true,
-            position: { x: Math.max(0, x), y },
-            size: initialWindowSize
-        });
-    } else {
-        setWindowState(prev => ({ ...prev, mounted: true }));
-    }
-  }, []);
+  // Window management
+  const {
+    position,
+    size,
+    mounted,
+    handleDragStart,
+    handleResizeStart,
+    setSize
+  } = useWindowPosition(initialWindowSize, initialPosition);
 
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<UploadFormData>({
@@ -106,89 +96,15 @@ export function ContentUploadWindow({
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
 
-  const dragRef = useRef<{ startX: number, startY: number, initialX: number, initialY: number } | null>(null);
-  const resizeRef = useRef<{ startX: number, startY: number, startWidth: number, startHeight: number } | null>(null);
-
   // Auto-resize for essay mode
   useEffect(() => {
     if (step === 1 && formData.contentType === 'essay' && essayMode === 'write') {
-      setWindowState(prev => ({ 
-        ...prev,
-        size: { 
-          width: Math.max(prev.size.width, 800), 
-          height: Math.max(prev.size.height, 600) 
-        }
-      }));
+      setSize({ 
+        width: Math.max(size.width, 800), 
+        height: Math.max(size.height, 600) 
+      });
     }
-  }, [step, formData.contentType, essayMode]);
-
-  const handleDragStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      initialX: windowState.position.x,
-      initialY: windowState.position.y
-    };
-    
-    const handleDrag = (e: MouseEvent) => {
-      if (!dragRef.current) return;
-      const dx = e.clientX - dragRef.current.startX;
-      const dy = e.clientY - dragRef.current.startY;
-      
-      const newX = Math.max(0, Math.min(dragRef.current.initialX + dx, window.innerWidth - windowState.size.width));
-      const newY = Math.max(0, Math.min(dragRef.current.initialY + dy, window.innerHeight - windowState.size.height));
-
-      setWindowState(prev => ({
-          ...prev,
-          position: { x: newX, y: newY }
-      }));
-    };
-
-    const handleDragEnd = () => {
-      dragRef.current = null;
-      document.removeEventListener('mousemove', handleDrag);
-      document.removeEventListener('mouseup', handleDragEnd);
-    };
-
-    document.addEventListener('mousemove', handleDrag);
-    document.addEventListener('mouseup', handleDragEnd);
-  };
-
-  const handleResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    resizeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startWidth: windowState.size.width,
-      startHeight: windowState.size.height
-    };
-
-    const handleResize = (e: MouseEvent) => {
-      if (!resizeRef.current) return;
-      const dx = e.clientX - resizeRef.current.startX;
-      const dy = e.clientY - resizeRef.current.startY;
-      
-      setWindowState(prev => ({
-          ...prev,
-          size: {
-            width: Math.max(400, resizeRef.current!.startWidth + dx),
-            height: Math.max(300, resizeRef.current!.startHeight + dy)
-          }
-      }));
-    };
-
-    const handleResizeEnd = () => {
-      resizeRef.current = null;
-      document.removeEventListener('mousemove', handleResize);
-      document.removeEventListener('mouseup', handleResizeEnd);
-    };
-
-    document.addEventListener('mousemove', handleResize);
-    document.addEventListener('mouseup', handleResizeEnd);
-  };
+  }, [step, formData.contentType, essayMode, size.width, size.height, setSize]);
 
   const handleFileChange = (file: File | null) => {
     setFormData(prev => ({ ...prev, file }));
@@ -368,7 +284,7 @@ export function ContentUploadWindow({
     setShowPreview(false);
     setProgress('');
     setError('');
-    setWindowState(prev => ({ ...prev, size: initialWindowSize }));
+    setSize(initialWindowSize);
   };
 
   const handleClose = () => {
@@ -378,15 +294,15 @@ export function ContentUploadWindow({
     }
   };
 
-  if (!isOpen || !windowState.mounted) return null;
+  if (!isOpen || !mounted) return null;
 
   const isWritingEssay = step === 1 && formData.contentType === 'essay' && essayMode === 'write';
 
   return (
     <RetroWindow
       title={isWritingEssay ? "Write Essay - Untitled" : "Upload Content"}
-      position={windowState.position}
-      size={windowState.size}
+      position={position}
+      size={size}
       zIndex={50}
       onClose={handleClose}
       onDragStart={handleDragStart}
