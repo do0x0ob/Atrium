@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useCurrentAccount } from "@mysten/dapp-kit";
-import { downloadAndDecryptVideo } from "@/services/sealVideo";
+import { downloadAndDecryptContent } from "@/services/sealContent";
 
 interface VideoPlayerProps {
   blobId: string;
@@ -43,11 +43,12 @@ export function VideoPlayer({ blobId, resourceId, isSubscribed, subscriptionProo
       const signFn = async (msg: Uint8Array) => ({ signature: "" });
       
       // Download and decrypt video
-      const decryptedUrl = await downloadAndDecryptVideo(
+      const decryptedUrl = await downloadAndDecryptContent(
         blobId,
         resourceId,
         userAddress,
-        signFn
+        signFn,
+        'video/mp4'
       );
 
       setVideoUrl(decryptedUrl);

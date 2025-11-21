@@ -7,6 +7,7 @@ import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { fromHex } from '@mysten/sui/utils';
 import { SEAL_CONFIG, getSealKeyServers } from '../config/seal';
+import { getWalrusAggregatorUrl } from '../config/walrus';
 
 // 測試用 package ID (來自 test-seal-simple.js)
 const TEST_PACKAGE_ID = '0x0a3cafc5e183fd49d4b4bc0a737ebd3a3f8b20701c3e0ff32ea01a3c40b14ab0';
@@ -140,8 +141,7 @@ export async function downloadAndDecryptContent(
   contentType: string,
 ): Promise<string> {
   // 1. 從 Walrus 下載加密內容
-  const aggregatorUrl = process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR || 
-    "https://aggregator.walrus-testnet.walrus.space";
+  const aggregatorUrl = getWalrusAggregatorUrl();
   const response = await fetch(`${aggregatorUrl}/v1/blobs/${blobId}`);
   
   if (!response.ok) {

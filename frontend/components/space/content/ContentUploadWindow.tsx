@@ -11,8 +11,7 @@ import {
   RetroFileUpload, 
   RetroToggle 
 } from '@/components/common/RetroForm';
-import { encryptContent } from '@/services/sealContent';
-import { uploadToWalrus } from '@/services/walrusApi';
+import { useContentUpload } from '@/hooks/useContentUpload';
 import { saveContent, StoredContent, dispatchContentUpdateEvent } from '@/utils/contentStorage';
 import { recordContent } from '@/utils/transactions';
 
@@ -65,6 +64,7 @@ export function ContentUploadWindow({
 }: ContentUploadWindowProps) {
   const currentAccount = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const { upload: uploadContent } = useContentUpload();
   
   const [windowState, setWindowState] = useState({
     mounted: false,
@@ -251,59 +251,23 @@ export function ContentUploadWindow({
       setUploading(true);
       setError('');
 
-      let walrusResponse;
-      let sealResourceId: string | undefined; // Store Seal resourceId for decryption
-
-      if (formData.requiresSubscription) {
-        setProgress('Encrypting content with Seal...');
-        
-        console.log('🔐 [ContentUploadWindow] Encrypting with spaceId:', {
-          spaceId,
-          spaceIdLength: spaceId.length,
-          startsWithHex: spaceId.startsWith('0x'),
-        });
-        
-        const encrypted = await encryptContent(formData.file, spaceId);
-        
-        // CRITICAL: Save the resourceId for decryption later
-        sealResourceId = encrypted.resourceId;
-        
-        console.log('✅ [ContentUploadWindow] Encryption complete:', {
-          resourceId: encrypted.resourceId,
-          resourceIdLength: encrypted.resourceId.length,
-        });
-
-        setProgress('Uploading to Walrus...');
-        walrusResponse = await uploadToWalrus(encrypted.encryptedBlob);
-      } else {
-        setProgress('Uploading to Walrus...');
-        walrusResponse = await uploadToWalrus(formData.file);
-      }
-
-      console.log('📤 [ContentUploadWindow] Walrus upload response:', {
-        blobId: walrusResponse.blobId,
-        objectId: walrusResponse.objectId,
-        hasObjectId: !!walrusResponse.objectId,
+      // Use unified upload hook
+      const uploadResult = await uploadContent(formData.file, {
+        spaceId,
+        requiresEncryption: formData.requiresSubscription,
       });
 
+      const { blobId, resourceId: sealResourceId, objectId } = uploadResult;
+
       // Record content on blockchain
-      if (walrusResponse.objectId && currentAccount) {
+      if (objectId && currentAccount) {
         setProgress('Recording on blockchain...');
-        
-        console.log('⛓️ [ContentUploadWindow] Recording to blockchain:', {
-          spaceId,
-          ownershipId,
-          blobObjectId: walrusResponse.objectId,
-          blobId: walrusResponse.blobId,
-          contentType: formData.contentType,
-          title: formData.title,
-        });
         
         const tx = recordContent(
           spaceId,
           ownershipId,
-          walrusResponse.objectId,
-          walrusResponse.blobId,
+          objectId,
+          blobId,
           formData.contentType,
           formData.title,
           formData.description,
@@ -338,16 +302,13 @@ export function ContentUploadWindow({
 
       // Save content metadata with complete Walrus information
       const content: StoredContent = {
-        id: walrusResponse.objectId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: objectId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         spaceId,
-        blobId: walrusResponse.blobId,
+        blobId,
         walrusMetadata: {
-          blobId: walrusResponse.blobId,
-          objectId: walrusResponse.objectId,
-          storage: walrusResponse.storage,
-          registeredEpoch: walrusResponse.registeredEpoch,
-          encodedLength: walrusResponse.encodedLength,
-          cost: walrusResponse.cost,
+          blobId,
+          objectId,
+          storage: uploadResult.storage,
         },
         sealResourceId, // CRITICAL: Save Seal resourceId for decryption
         title: formData.title,

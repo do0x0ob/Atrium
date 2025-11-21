@@ -1,19 +1,25 @@
 /**
- * Walrus 配置
- * 統一管理 Walrus 相關的 URL 和設置
+ * Walrus 統一配置
+ * Centralized Walrus configuration
  */
 
+// Get Walrus aggregator URL from environment or use default
+const getAggregatorUrl = () => {
+  return process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR || 
+    'https://aggregator.walrus-testnet.walrus.space';
+};
+
 export const WALRUS_CONFIG = {
-  // Walrus Aggregator URL for reading data
-  AGGREGATOR_URL: 'https://aggregator.testnet.walrus.atalma.io/v1/blobs',
+  // Walrus Aggregator base URL
+  aggregatorUrl: getAggregatorUrl(),
   
   // Get complete blob URL
-  getBlobUrl: (blobId: string) => `https://aggregator.testnet.walrus.atalma.io/v1/blobs/${blobId}`,
+  getBlobUrl: (blobId: string) => `${getAggregatorUrl()}/v1/blobs/${blobId}`,
   
   // Epochs for upload retention period
-  DEFAULT_EPOCHS: 1,
+  defaultEpochs: 1,
 } as const;
 
 // Export utility functions
 export const getWalrusBlobUrl = WALRUS_CONFIG.getBlobUrl;
-
+export const getWalrusAggregatorUrl = getAggregatorUrl;
