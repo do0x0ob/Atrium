@@ -44,14 +44,14 @@ export async function encryptContent(
   const sealClient = getSealClient();
   const { encryptedObject } = await sealClient.encrypt({
     threshold: 2,
-    packageId: TEST_PACKAGE_ID,
-    id: resourceId,
-    data: fileData,
-  });
+      packageId: TEST_PACKAGE_ID,
+      id: resourceId,
+      data: fileData,
+    });
 
-  return {
+    return {
     encryptedBlob: new Blob([encryptedObject], { type: 'application/octet-stream' }),
-    resourceId,
+      resourceId,
   };
 }
 
@@ -81,32 +81,32 @@ export async function decryptContent(
       const suiClient = new SuiClient({ url: getFullnodeUrl('testnet') });
 
       // 1. 創建 SessionKey
-      const sessionKey = await SessionKey.create({
-        address: userAddress,
+  const sessionKey = await SessionKey.create({
+    address: userAddress,
         packageId: TEST_PACKAGE_ID,
-        ttlMin: 10,
-        suiClient,
-      });
+    ttlMin: 10,
+    suiClient,
+  });
 
       // 2. 簽名（只有這一次簽名！）
-      const message = sessionKey.getPersonalMessage();
+    const message = sessionKey.getPersonalMessage();
       console.log('🔑 Requesting signature...');
       const { signature } = await signPersonalMessage(message);
       console.log('✅ Signature obtained');
-      sessionKey.setPersonalMessageSignature(signature);
+    sessionKey.setPersonalMessageSignature(signature);
 
       // 3. 建構 seal_approve 交易
       const resourceIdBytes = fromHex(spaceId.replace('0x', ''));
-      const tx = new Transaction();
-      tx.moveCall({
+  const tx = new Transaction();
+    tx.moveCall({
         target: `${TEST_PACKAGE_ID}::seal_test::seal_approve`,
         arguments: [tx.pure.vector('u8', Array.from(resourceIdBytes))],
-      });
+    });
 
-      const txBytes = await tx.build({
-        client: suiClient,
+    const txBytes = await tx.build({
+      client: suiClient,
         onlyTransactionKind: true,
-      });
+    });
 
       // 4. 解密
       const sealClient = getSealClient();
@@ -126,7 +126,7 @@ export async function decryptContent(
 
   // 存儲 Promise
   decryptionLocks.set(lockKey, decryptPromise);
-  
+
   return decryptPromise;
 }
 
@@ -142,26 +142,26 @@ export async function downloadAndDecryptContent(
 ): Promise<string> {
   // 1. 從 Walrus 下載加密內容
   const aggregatorUrl = getWalrusAggregatorUrl();
-  const response = await fetch(`${aggregatorUrl}/v1/blobs/${blobId}`);
-  
-  if (!response.ok) {
+    const response = await fetch(`${aggregatorUrl}/v1/blobs/${blobId}`);
+    
+    if (!response.ok) {
     throw new Error(`Failed to download: HTTP ${response.status}`);
-  }
+    }
 
-  const encryptedData = new Uint8Array(await response.arrayBuffer());
+    const encryptedData = new Uint8Array(await response.arrayBuffer());
 
   // 2. 解密
   const decryptedData = await decryptContent(
-    encryptedData,
-    spaceId,
-    userAddress,
-    signPersonalMessage,
-  );
+      encryptedData,
+      spaceId,
+      userAddress,
+      signPersonalMessage,
+    );
 
   // 3. 返回結果
   const blob = new Blob([new Uint8Array(decryptedData)], { type: contentType });
   
-  if (contentType === 'text/markdown' || contentType === 'text/plain') {
+    if (contentType === 'text/markdown' || contentType === 'text/plain') {
     return await blob.text();
   }
 

@@ -16,17 +16,17 @@ interface EssayWindowProps {
 }
 
 export const EssayWindow: React.FC<EssayWindowProps> = ({ 
-  blobId, 
-  spaceId, 
-  title, 
+      blobId,
+      spaceId,
+      title,
   isLocked 
 }) => {
   const { content, loading, error } = useSecureContent({
-    blobId,
+        blobId,
     resourceId: spaceId,
     contentType: 'text/markdown',
-    isLocked,
-  });
+        isLocked,
+      });
 
   return (
     <SecureContentWindow

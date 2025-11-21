@@ -253,10 +253,10 @@ export function ContentUploadWindow({
 
       // Use unified upload hook
       const uploadResult = await uploadContent(formData.file, {
-        spaceId,
+          spaceId,
         requiresEncryption: formData.requiresSubscription,
-      });
-
+        });
+        
       const { blobId, resourceId: sealResourceId, objectId } = uploadResult;
 
       // Record content on blockchain

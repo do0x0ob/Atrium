@@ -89,18 +89,15 @@ export function ContentItem({ item, isSubscribed, isCreator, onUnlock, onView }:
               
               {/* Price/Status */}
               <div className="flex-shrink-0">
-                {!canAccess && item.isLocked ? (
+                {item.isLocked ? (
                   <RetroPanel variant="inset" className="px-2 py-1 bg-yellow-50">
                     <div className="flex items-center gap-1">
                       <span className="text-sm">🔒</span>
-                      <span className="text-xs font-medium text-yellow-700 uppercase tracking-wide whitespace-nowrap" style={{ fontFamily: 'Georgia, serif' }}>
-                        Premium
-                      </span>
                     </div>
                   </RetroPanel>
                 ) : (
                   <div className="text-xs text-gray-500 uppercase tracking-wide px-2" style={{ fontFamily: 'Georgia, serif' }}>
-                    {getPriceDisplay()}
+                    FREE
                   </div>
                 )}
               </div>

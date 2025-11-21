@@ -18,10 +18,7 @@ import { PACKAGE_ID } from "@/config/sui";
 import { useSpaceContents } from "@/hooks/useSpaceContents";
 
 // Window Manager
-import { useWindowManager } from "@/components/features/window-manager";
-import Window from "@/components/features/window-manager/components/Window";
-import { VideoWindow } from "@/components/windows/VideoWindow";
-import { EssayWindow } from "@/components/windows/EssayWindow";
+import { useContentWindows } from "@/hooks/useContentWindows";
 
 interface SpaceDetailProps {
   space?: {
@@ -78,15 +75,7 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
   const [viewMode, setViewMode] = useState<'3d' | 'landing'>(isCreator ? 'landing' : '3d');
 
   // Window Manager
-  const {
-    windows,
-    activeWindowId,
-    openWindow,
-    closeWindow,
-    activateWindow,
-    startDragging,
-    resizeWindow,
-  } = useWindowManager();
+  const { openEssay, openVideo, renderWindows } = useContentWindows();
 
   // 檢測手機版
   const [isMobile, setIsMobile] = useState(false);
@@ -294,27 +283,10 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
     });
 
     // Open appropriate window with item data
-    // Seal encryption ID will be automatically extracted from the encrypted blob
     if (item.type === 'video') {
-      openWindow('video-player', {
-        title: item.title,
-        data: {
-          blobId: actualBlobId,
-          spaceId: spaceId,
-          title: item.title,
-          isLocked: item.isLocked || false,
-        }
-      });
+      openVideo(actualBlobId, spaceId, item.title, item.isLocked || false);
     } else if (item.type === 'essay') {
-      openWindow('essay-reader', {
-        title: item.title,
-        data: {
-          blobId: actualBlobId,
-          spaceId: spaceId,
-          title: item.title,
-          isLocked: item.isLocked || false,
-        }
-      });
+      openEssay(actualBlobId, spaceId, item.title, item.isLocked || false);
     }
     
     setIsContentMenuOpen(false);
@@ -338,57 +310,7 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
     <div className="h-screen bg-gray-100 flex flex-col overflow-hidden" style={{ fontFamily: 'Georgia, serif' }}>
       
       {/* Windows Layer - Only relevant in 3D mode or overlaying Landing Page */}
-      {Object.values(windows)
-        .filter(window => {
-          if (isMobile) {
-            return window.id === activeWindowId;
-          }
-          return true;
-        })
-        .map(window => {
-          let content = null;
-          if (window.type === 'video-player') {
-            content = (
-              <VideoWindow 
-                blobId={window.data?.blobId}
-                resourceId={window.data?.resourceId}
-                title={window.data?.title}
-                isLocked={window.data?.isLocked}
-              />
-            );
-          } else if (window.type === 'essay-reader') {
-            content = (
-              <EssayWindow
-                blobId={window.data?.blobId}
-                spaceId={window.data?.spaceId}
-                title={window.data?.title}
-                isLocked={window.data?.isLocked}
-              />
-            );
-          }
-
-          if (!content) return null;
-
-          return (
-            <Window
-              key={window.id}
-              id={window.id}
-              title={window.title}
-              position={window.position}
-              size={window.size}
-              isActive={activeWindowId === window.id}
-              zIndex={window.zIndex}
-              onClose={closeWindow}
-              onDragStart={startDragging}
-              onResize={resizeWindow}
-              onClick={() => activateWindow(window.id)}
-              resizable={window.resizable}
-            >
-              {content}
-            </Window>
-          );
-        })
-      }
+      {renderWindows({ isMobile })}
 
       {/* Main Content Area */}
       <div className="flex flex-col-reverse lg:flex-row flex-1 overflow-hidden">

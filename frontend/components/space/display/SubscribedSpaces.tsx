@@ -6,7 +6,7 @@ import { SpaceCard } from "./SpaceCard";
 import { SpaceCategoryFilter, SpaceCategory } from "../ui";
 import { RetroPanel } from "@/components/common/RetroPanel";
 import { RetroHeading } from "@/components/common/RetroHeading";
-import { RetroEmptyState } from "@/components/common/RetroEmptyState";
+import { StateContainer } from "@/components/common/StateContainer";
 
 interface Space {
   kioskId: string;
@@ -74,6 +74,11 @@ export function SubscribedSpaces() {
     }
   };
 
+  // Filter spaces based on selected category
+  const filteredSpaces = filter === "all" 
+    ? subscribedSpaces 
+    : subscribedSpaces.filter(space => space.category === filter);
+
   return (
     <RetroPanel className="h-full flex flex-col">
       {/* Header */}
@@ -92,42 +97,42 @@ export function SubscribedSpaces() {
 
       {/* Space Grid */}
       <div className="flex-1 overflow-y-auto scrollbar-hidden px-3 md:px-6 pt-2 md:pt-4 pb-3 md:pb-6">
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
-            {[...Array(3)].map((_, i) => (
-              <RetroPanel 
-                key={i}
-                variant="inset"
-                className="h-64 animate-pulse"
-              >
-                <div />
-              </RetroPanel>
-            ))}
-          </div>
-        ) : (() => {
-          // Filter spaces based on selected category
-          const filteredSpaces = filter === "all" 
-            ? subscribedSpaces 
-            : subscribedSpaces.filter(space => space.category === filter);
+        <StateContainer 
+          loading={loading}
+          error={null}
+          empty={filteredSpaces.length === 0}
+        >
+          <StateContainer.Loading>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+              {[...Array(3)].map((_, i) => (
+                <RetroPanel 
+                  key={i}
+                  variant="inset"
+                  className="h-64 animate-pulse"
+                >
+                  <div />
+                </RetroPanel>
+              ))}
+            </div>
+          </StateContainer.Loading>
 
-          return filteredSpaces.length === 0 ? (
-            <RetroEmptyState
-              icon="📚"
-              title="No Subscriptions Found"
-              message={filter === "all" 
-                ? "You haven't subscribed to any spaces yet. Explore spaces to find creators you love!" 
-                : `No subscriptions found in ${filter.charAt(0).toUpperCase() + filter.slice(1)} category.`}
-            />
-          ) : (
+          <StateContainer.Empty
+            icon="📚"
+            title="No Subscriptions Found"
+            message={filter === "all" 
+              ? "You haven't subscribed to any spaces yet. Explore spaces to find creators you love!" 
+              : `No subscriptions found in ${filter.charAt(0).toUpperCase() + filter.slice(1)} category.`}
+          />
+
+          <StateContainer.Content>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
               {filteredSpaces.map((space) => (
                 <SpaceCard key={space.kioskId} space={space} />
               ))}
             </div>
-          );
-        })()}
+          </StateContainer.Content>
+        </StateContainer>
       </div>
     </RetroPanel>
   );
 }
-

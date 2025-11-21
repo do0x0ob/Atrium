@@ -24,10 +24,7 @@ import { ObjectTransform } from '@/types/spaceEditor';
 import { Model3DItem } from '@/types/three';
 import { getWalrusBlobUrl } from '@/config/walrus';
 import { useSpaceContents } from '@/hooks/useSpaceContents';
-import { useWindowManager } from '@/components/features/window-manager';
-import Window from '@/components/features/window-manager/components/Window';
-import { VideoWindow } from '@/components/windows/VideoWindow';
-import { EssayWindow } from '@/components/windows/EssayWindow';
+import { useContentWindows } from '@/hooks/useContentWindows';
 
 export function SpacePreviewWindow() {
   const currentAccount = useCurrentAccount();
@@ -36,15 +33,7 @@ export function SpacePreviewWindow() {
   const { spaces: userSpaces, loading, refetch } = useUserSpaces();
   
   // Window Manager
-  const {
-    windows,
-    activeWindowId,
-    openWindow,
-    closeWindow,
-    activateWindow,
-    startDragging,
-    resizeWindow,
-  } = useWindowManager();
+  const { openEssay, openVideo, renderWindows } = useContentWindows();
   
   const [selectedSpace, setSelectedSpace] = useState<UserSpaceData | null>(
     userSpaces.length > 0 ? userSpaces[0] : null
@@ -191,27 +180,11 @@ export function SpacePreviewWindow() {
     }
 
     // Open appropriate window based on content type
-    // Seal encryption ID will be automatically extracted from the encrypted blob
+    // Open content window
     if (content.type === 'video') {
-      openWindow('video-player', {
-        title: content.title,
-        data: {
-          blobId: content.blobId,
-          spaceId: spaceId,
-          title: content.title,
-          isLocked: content.encrypted || false,
-        }
-      });
+      openVideo(content.blobId, spaceId, content.title, content.encrypted || false);
     } else if (content.type === 'essay') {
-      openWindow('essay-reader', {
-        title: content.title,
-        data: {
-          blobId: content.blobId,
-          spaceId: spaceId,
-          title: content.title,
-          isLocked: content.encrypted || false,
-        }
-      });
+      openEssay(content.blobId, spaceId, content.title, content.encrypted || false);
     }
   };
 
@@ -727,50 +700,7 @@ export function SpacePreviewWindow() {
       )}
 
       {/* Floating Windows for Content Viewing */}
-      {Object.values(windows).map((win) => {
-        let content = null;
-        
-        if (win.type === 'video-player' && win.data) {
-          content = (
-            <VideoWindow
-              blobId={win.data.blobId}
-              resourceId={win.data.resourceId}
-              title={win.data.title}
-              isLocked={win.data.isLocked}
-            />
-          );
-        } else if (win.type === 'essay-reader' && win.data) {
-          content = (
-            <EssayWindow
-              blobId={win.data.blobId}
-              spaceId={win.data.spaceId}
-              title={win.data.title}
-              isLocked={win.data.isLocked}
-            />
-          );
-        }
-
-        if (!content) return null;
-
-        return (
-          <Window
-            key={win.id}
-            id={win.id}
-            title={win.title}
-            position={win.position}
-            size={win.size}
-            isActive={win.id === activeWindowId}
-            zIndex={win.zIndex}
-            onClose={closeWindow}
-            onDragStart={startDragging}
-            onResize={resizeWindow}
-            onClick={() => activateWindow(win.id)}
-            resizable={win.resizable}
-          >
-            {content}
-          </Window>
-        );
-      })}
+      {renderWindows()}
     </RetroPanel>
   );
 }

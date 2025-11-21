@@ -1,6 +1,7 @@
 "use client";
 
 import { ContentItem, ContentItemData } from "./ContentItem";
+import { StateContainer } from "@/components/common/StateContainer";
 
 interface ContentListProps {
   items: ContentItemData[];
@@ -43,33 +44,34 @@ export function ContentList({ items, type, isSubscribed, isCreator, onUnlock, on
     }
   };
 
-  if (filteredItems.length === 0) {
-    const emptyState = getEmptyStateInfo();
-    return (
-      <div className="text-center py-8">
-        <div className="text-4xl mb-3">{emptyState.icon}</div>
-        <h3 className="text-sm font-medium text-gray-800 mb-2" style={{ fontFamily: 'Georgia, serif' }}>
-          {emptyState.title}
-        </h3>
-        <p className="text-xs text-gray-600" style={{ fontFamily: 'Georgia, serif' }}>
-          {emptyState.message}
-        </p>
-      </div>
-    );
-  }
+  const emptyState = getEmptyStateInfo();
 
   return (
-    <div className="space-y-3">
-      {filteredItems.map((item) => (
-        <ContentItem
-          key={item.id}
-          item={item}
-          isSubscribed={isSubscribed}
-          isCreator={isCreator}
-          onUnlock={onUnlock}
-          onView={onView}
-        />
-      ))}
-    </div>
+    <StateContainer 
+      loading={false}
+      error={null}
+      empty={filteredItems.length === 0}
+    >
+      <StateContainer.Empty
+        icon={emptyState.icon}
+        title={emptyState.title}
+        message={emptyState.message}
+      />
+
+      <StateContainer.Content>
+        <div className="space-y-3">
+          {filteredItems.map((item) => (
+            <ContentItem
+              key={item.id}
+              item={item}
+              isSubscribed={isSubscribed}
+              isCreator={isCreator}
+              onUnlock={onUnlock}
+              onView={onView}
+            />
+          ))}
+        </div>
+      </StateContainer.Content>
+    </StateContainer>
   );
 }
