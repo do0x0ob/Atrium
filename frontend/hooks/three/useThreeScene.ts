@@ -180,6 +180,49 @@ export function useThreeScene(options: UseThreeSceneOptions = {}) {
     return sceneManagerRef.current?.getVideoScreenMesh();
   }, []);
 
+  // Weather system integration
+  const updateWeatherParams = useCallback((params: any) => {
+    sceneManagerRef.current?.updateWeatherParams(params);
+  }, []);
+
+  const getCurrentWeatherParams = useCallback(() => {
+    return sceneManagerRef.current?.getCurrentWeatherParams();
+  }, []);
+
+  // Transform controls
+  const attachTransformControls = useCallback((object: THREE.Object3D) => {
+    sceneManagerRef.current?.attachTransformControls(object);
+  }, []);
+
+  const detachTransformControls = useCallback(() => {
+    sceneManagerRef.current?.detachTransformControls();
+  }, []);
+
+  const setTransformMode = useCallback((mode: 'translate' | 'rotate' | 'scale') => {
+    sceneManagerRef.current?.setTransformMode(mode);
+  }, []);
+
+  const pickObject = useCallback((x: number, y: number) => {
+    return sceneManagerRef.current?.pickObject(x, y) || null;
+  }, []);
+
+  const getSceneState = useCallback(() => {
+    return sceneManagerRef.current?.getSceneState() || [];
+  }, []);
+
+  const playIntroAnimation = useCallback(async (options?: { duration?: number; startDistanceMultiplier?: number; startHeightOffset?: number }) => {
+    if (sceneManagerRef.current) {
+      await sceneManagerRef.current.playIntroAnimation(options);
+    }
+  }, []);
+
+  const setTransformCallbacks = useCallback((
+    onDraggingChanged?: (isDragging: boolean) => void,
+    onTransformChange?: () => void
+  ) => {
+    sceneManagerRef.current?.setTransformCallbacks(onDraggingChanged, onTransformChange);
+  }, []);
+
   return {
     canvasRef,
     sceneManager: sceneManagerRef.current || undefined,
@@ -194,6 +237,15 @@ export function useThreeScene(options: UseThreeSceneOptions = {}) {
     getAudienceSeatPositions,
     getHolographicScreen,
     getVideoScreenMesh,
+    updateWeatherParams,
+    getCurrentWeatherParams,
+    attachTransformControls,
+    detachTransformControls,
+    setTransformMode,
+    pickObject,
+    getSceneState,
+    playIntroAnimation,
+    setTransformCallbacks,
   };
 }
 

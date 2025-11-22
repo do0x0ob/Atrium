@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { AtriumGalleryScene, AtriumGallerySceneConfig } from './AtriumGalleryScene';
 import { ThreeSceneConfig, LoadGLBOptions } from '../../types/three';
 
@@ -16,6 +17,20 @@ export class SceneManager {
   private galleryScene?: AtriumGalleryScene;
   private dracoLoader: DRACOLoader;
   private clock: THREE.Clock;
+  private transformControls?: TransformControls;
+  private onDraggingChanged?: (isDragging: boolean) => void;
+  private onTransformChange?: () => void;
+  
+  // Animation state
+  private introAnimation: {
+    isActive: boolean;
+    startTime: number;
+    duration: number;
+    startPos: THREE.Vector3;
+    endPos: THREE.Vector3;
+    startTarget: THREE.Vector3;
+    endTarget: THREE.Vector3;
+  } | null = null;
 
   constructor(canvas: HTMLCanvasElement, config: ThreeSceneConfig = {}) {
     this.clock = new THREE.Clock();
@@ -62,13 +77,33 @@ export class SceneManager {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
     this.controls.minDistance = 5;
-    this.controls.maxDistance = 30; // Allow Monument Valley style distant view
+    this.controls.maxDistance = 60; // Increased for intro view
     this.controls.maxPolarAngle = Math.PI / 2.2; // Slight constraint to maintain architectural feel
     this.controls.update(); // Apply initial target
 
+    // Setup transform controls for object manipulation
+    this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
+    this.transformControls.setMode('translate');
+    this.transformControls.setSpace('world');
+    this.scene.add(this.transformControls as any);
+    
+    // Disable orbit controls when dragging with transform controls
+    this.transformControls.addEventListener('dragging-changed', (event: any) => {
+      this.controls.enabled = !event.value;
+      if (this.onDraggingChanged) {
+        this.onDraggingChanged(event.value);
+      }
+    });
+
+    this.transformControls.addEventListener('change', () => {
+      if (this.onTransformChange) {
+        this.onTransformChange();
+      }
+    });
+
     // Initialize gallery scene
     if (config.galleryScene) {
-      this.galleryScene = new AtriumGalleryScene(this.scene, config.galleryScene);
+      this.galleryScene = new AtriumGalleryScene(this.scene, config.galleryScene, this.camera);
     } else {
       // Fallback to basic background
       this.scene.background = new THREE.Color(config.backgroundColor || 0xe8f4f8);
@@ -131,8 +166,49 @@ export class SceneManager {
       this.animationId = requestAnimationFrame(animate);
       
       const deltaTime = this.clock.getDelta();
+      const elapsedTime = this.clock.getElapsedTime();
       
       this.controls.update();
+
+      // Handle Intro Animation
+      if (this.introAnimation && this.introAnimation.isActive) {
+        const elapsed = Date.now() - this.introAnimation.startTime;
+        const progress = Math.min(elapsed / this.introAnimation.duration, 1.0);
+        
+        // Cubic Ease Out
+        const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+        const alpha = easeOutCubic(progress);
+
+        this.camera.position.lerpVectors(
+          this.introAnimation.startPos, 
+          this.introAnimation.endPos, 
+          alpha
+        );
+        
+        this.controls.target.lerpVectors(
+          this.introAnimation.startTarget,
+          this.introAnimation.endTarget,
+          alpha
+        );
+        this.controls.update();
+
+        if (progress >= 1.0) {
+          this.introAnimation.isActive = false;
+          this.controls.enabled = true;
+        }
+      }
+
+      // Animate floating platforms
+      this.scene.traverse((obj) => {
+        if (obj.userData.isFloatingPlatform) {
+          const baseY = obj.userData.baseY || 0;
+          const offset = obj.userData.floatOffset || 0;
+          // Gentle sine wave float: amplitude 0.1, period 3 seconds
+          obj.position.y = baseY + Math.sin(elapsedTime * 2.0 + offset) * 0.1;
+          // Slight rotation for organic feel
+          obj.rotation.y = Math.sin(elapsedTime * 0.5 + offset) * 0.05;
+        }
+      });
 
       // Update gallery scene animations
       if (this.galleryScene) {
@@ -185,7 +261,6 @@ export class SceneManager {
           this.applyModelOptions(model, options);
           this.scene.add(model);
           this.loadedModels.set(url, model);
-          console.log(`GLB model loaded successfully: ${url}`);
           resolve(model);
         },
         (progress) => {
@@ -297,6 +372,13 @@ export class SceneManager {
     }
 
     // Dispose Three.js resources
+    // Explicitly remove TransformControls before traversal to prevent errors
+    if (this.transformControls) {
+      this.scene.remove(this.transformControls as unknown as THREE.Object3D);
+      this.transformControls.dispose();
+      this.transformControls = undefined;
+    }
+
     this.scene.traverse((object) => {
       if (object instanceof THREE.Mesh) {
         object.geometry.dispose();
@@ -353,5 +435,175 @@ export class SceneManager {
   getVideoScreenMesh() {
     return this.galleryScene?.getVideoScreenMesh();
   }
+
+  // Set TransformControls callbacks
+  setTransformCallbacks(
+    onDraggingChanged?: (isDragging: boolean) => void,
+    onTransformChange?: () => void
+  ) {
+    this.onDraggingChanged = onDraggingChanged;
+    this.onTransformChange = onTransformChange;
+  }
+
+  // Attach TransformControls to an object
+  attachTransformControls(object: THREE.Object3D) {
+    if (this.transformControls) {
+      this.transformControls.attach(object);
+    }
+  }
+
+  // Detach TransformControls
+  detachTransformControls() {
+    if (this.transformControls) {
+      this.transformControls.detach();
+    }
+  }
+
+  // Set TransformControls mode
+  setTransformMode(mode: 'translate' | 'rotate' | 'scale') {
+    if (this.transformControls) {
+      this.transformControls.setMode(mode);
+    }
+  }
+
+  // Pick object at normalized coordinates (-1 to +1)
+  pickObject(normalizedX: number, normalizedY: number): THREE.Object3D | null {
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(normalizedX, normalizedY), this.camera);
+
+    const intersects = raycaster.intersectObjects(this.scene.children, true);
+    
+    console.log('🎯 Pick attempt:', { intersects: intersects.length, normalized: { x: normalizedX, y: normalizedY } });
+    
+    // Filter out TransformControls, grid, helpers, etc.
+    for (const intersect of intersects) {
+      let obj = intersect.object;
+      
+      // Traverse up to find the root group if it's a model
+      while (obj.parent && obj.parent !== this.scene) {
+        // If we hit a special object (like TransformControls), ignore it
+        if (obj.parent.type === 'TransformControls') {
+          console.log('❌ Hit TransformControls, skipping');
+          return null;
+        }
+        obj = obj.parent;
+      }
+
+      // Ignore grid/lights/helpers if needed
+      if (obj.type === 'GridHelper' || obj.type === 'AxesHelper' || obj.type === 'Light') {
+        console.log('❌ Hit helper/light, skipping:', obj.type);
+        continue;
+      }
+      
+      // Check if it's a loaded model (check if it's in our loaded models Map)
+      const isLoadedModel = Array.from(this.loadedModels.values()).some(model => model === obj);
+      
+      if (isLoadedModel || obj.type === 'Group' || obj.type === 'Mesh') {
+        console.log('✅ Picked object:', { name: obj.name, type: obj.type, isLoadedModel });
+        return obj;
+      }
+      
+      console.log('⚠️ Object found but skipped:', { name: obj.name, type: obj.type });
+    }
+    
+    console.log('❌ No valid object picked');
+    return null;
+  }
+
+  // Get scene objects (serialized for config)
+  getSceneState() {
+    const models = Array.from(this.loadedModels.entries()).map(([id, group]) => {
+      return {
+        id,
+        name: group.name,
+        position: { x: group.position.x, y: group.position.y, z: group.position.z },
+        rotation: { x: group.rotation.x, y: group.rotation.y, z: group.rotation.z },
+        scale: { x: group.scale.x, y: group.scale.y, z: group.scale.z },
+        // Note: URL is not stored in the Group directly, would need to be mapped back
+      };
+    });
+    return models;
+  }
+
+  // Update model position
+  updateModelPosition(modelId: string, position: { x: number; y: number; z: number }) {
+    const model = this.loadedModels.get(modelId);
+    if (model) {
+      model.position.set(position.x, position.y, position.z);
+    }
+  }
+
+  // Update model rotation
+  updateModelRotation(modelId: string, rotation: { x: number; y: number; z: number }) {
+    const model = this.loadedModels.get(modelId);
+    if (model) {
+      model.rotation.set(rotation.x, rotation.y, rotation.z);
+    }
+  }
+
+  // Update model scale
+  updateModelScale(modelId: string, scale: { x: number; y: number; z: number }) {
+    const model = this.loadedModels.get(modelId);
+    if (model) {
+      model.scale.set(scale.x, scale.y, scale.z);
+    }
+  }
+
+  // Update weather parameters (delegates to gallery scene)
+  updateWeatherParams(params: any) {
+    if (this.galleryScene) {
+      this.galleryScene.updateWeatherParams(params);
+    }
+  }
+
+  // Get current weather parameters
+  getCurrentWeatherParams() {
+    return this.galleryScene?.getCurrentWeatherParams();
+  }
+
+  /**
+   * Plays a cinematic intro animation (Monument Valley style)
+   */
+  playIntroAnimation(options: {
+    duration?: number;
+    startDistanceMultiplier?: number;
+    startHeightOffset?: number;
+  } = {}): Promise<void> {
+    const {
+      duration = 4000,
+      startDistanceMultiplier = 120,
+      startHeightOffset = 50
+    } = options;
+
+    return new Promise((resolve) => {
+      const currentPos = this.camera.position.clone();
+      const currentTarget = this.controls.target.clone();
+
+      // Define start position (High altitude, isometric-ish)
+      // Start further away and higher to create a longer "approach" shot
+      const startPos = currentPos.clone().normalize().multiplyScalar(startDistanceMultiplier).add(new THREE.Vector3(0, startHeightOffset, 0));
+      
+      this.controls.enabled = false; // Disable user interaction
+      
+      this.introAnimation = {
+        isActive: true,
+        startTime: Date.now(),
+        duration,
+        startPos,
+        endPos: currentPos,
+        startTarget: currentTarget,
+        endTarget: currentTarget // Keep looking at same target
+      };
+      
+      // Set initial position immediately
+      this.camera.position.copy(startPos);
+
+      // Resolve after duration
+      setTimeout(() => {
+        resolve();
+      }, duration);
+    });
+  }
 }
+
 

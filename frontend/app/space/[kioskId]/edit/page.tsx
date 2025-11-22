@@ -1,152 +1,358 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useCurrentAccount, useSuiClient } from "@mysten/dapp-kit";
+import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-kit";
 import { RetroPanel } from "@/components/common/RetroPanel";
 import { RetroButton } from "@/components/common/RetroButton";
-import { RetroHeading } from "@/components/common/RetroHeading";
 import { ThreeScene } from "@/components/3d/ThreeScene";
+import { RetroFrameCanvas } from "@/components/3d/RetroFrameCanvas";
+import { NFTListPanel } from "@/components/space/nft";
+import { ContentManager } from "@/components/space/content";
+import { ScreenConfig } from "@/components/space/creation";
+import { useSpace } from "@/hooks/useSpace";
+import { useUserSpaces } from "@/hooks/useUserSpaces";
+import { useSpaceEditor } from "@/hooks/useSpaceEditor";
+import { useKioskManagement } from "@/hooks/useKioskManagement";
+import { useWalletSignature } from "@/hooks/useWalletSignature";
+import { serializeConfig, uploadConfigToWalrus, downloadConfigFromWalrus } from "@/utils/spaceConfig";
+import { updateSpaceConfig, SUI_CHAIN } from "@/utils/transactions";
+import { SceneObject, ObjectTransform } from "@/types/spaceEditor";
+import { Model3DItem, ThreeSceneApi } from "@/types/three";
+import { getWalrusBlobUrl } from "@/config/walrus";
 
-interface SpaceData {
-  kioskId: string;
-  name: string;
-  description: string;
-  coverImage: string;
-  configQuilt: string;
-  subscriptionPrice: string;
-  creator: string;
-}
+// Temporary helper to normalize object type for UI display
+const normalizeObjectType = (type: string) => {
+  // The backend might return different casing or values
+  const t = type.toLowerCase();
+  if (t === '3d' || t === 'glb' || t === 'gltf') return '3d';
+  return '2d';
+};
 
 export default function SpaceEditPage() {
   const params = useParams();
   const router = useRouter();
   const currentAccount = useCurrentAccount();
-  const suiClient = useSuiClient();
-  const kioskId = params.kioskId as string;
+  const spaceId = params.kioskId as string;
   
-  const [loading, setLoading] = useState(true);
-  const [spaceData, setSpaceData] = useState<SpaceData | null>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
+  const { space, loading, error } = useSpace(spaceId);
+  const { spaces: userSpaces } = useUserSpaces();
+  const { verifyOwnership, isVerifying } = useWalletSignature();
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  
+  const [activeTab, setActiveTab] = useState<'scene' | 'nfts' | 'content' | 'settings'>('scene');
+  const [isSaving, setSaving] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
+  const [visibleNFTs, setVisibleNFTs] = useState<Set<string>>(new Set());
+  const [objectTransforms, setObjectTransforms] = useState(new Map());
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  
+  const threeSceneRef = useRef<ThreeSceneApi>(null);
+
+  const ownershipNFT = userSpaces.find(s => s.spaceId === spaceId);
+
+  const {
+    state: editorState,
+    setEditMode,
+    toggleObjectVisibility,
+    updateObjectTransform,
+    updateObjectScale,
+    getAllObjects,
+    setObjects,
+    addObject,
+  } = useSpaceEditor();
+
+  // 獲取 Kiosk 中的 NFT 列表
+  const { nfts } = useKioskManagement({
+    kioskId: space?.marketplaceKioskId || null,
+    enabled: !!space?.marketplaceKioskId,
+  });
 
   useEffect(() => {
-    if (kioskId) {
-      loadSpaceData();
+    if (spaceId && currentAccount) {
+      checkOwnership();
     }
-  }, [kioskId]);
+  }, [spaceId, currentAccount]);
 
-  const loadSpaceData = async () => {
-    try {
-      setLoading(true);
-      
-      // TODO: Load space data from chain
-      // For now, use mock data that matches SpaceList.tsx
-      const mockSpaces: Record<string, Partial<SpaceData>> = {
-        "0x123": {
-          name: "Art Gallery",
-          description: "Sharing my digital art creations",
-          subscriptionPrice: "1000000000", // 1 SUI
-        },
-        "0x456": {
-          name: "Music Studio",
-          description: "Original compositions and performances",
-          subscriptionPrice: "2000000000", // 2 SUI
-        },
-        "0x789": {
-          name: "Tech Workshop",
-          description: "Tutorials and technical content",
-          subscriptionPrice: "1500000000", // 1.5 SUI
-        },
-        "0xaaa": {
-          name: "Photography Studio",
-          description: "Professional photography and editing",
-          subscriptionPrice: "1200000000",
-        },
-        "0xbbb": {
-          name: "Writing Corner",
-          description: "Stories, poems, and creative writing",
-          subscriptionPrice: "800000000",
-        },
-        "0xccc": {
-          name: "Design Lab",
-          description: "UI/UX designs and graphic art",
-          subscriptionPrice: "1800000000",
-        },
-        "0xddd": {
-          name: "Cooking Channel",
-          description: "Recipes and culinary adventures",
-          subscriptionPrice: "900000000",
-        },
-        default: {
-          name: "Unknown Space",
-          description: "This space information is not available",
-          subscriptionPrice: "1000000000",
-        }
-      };
+  useEffect(() => {
+    if (space?.configQuilt) {
+      loadConfig();
+    }
+  }, [space?.configQuilt]);
 
-      // Use the kioskId to determine which mock space to show, or default
-      const selectedSpace = mockSpaces[kioskId] || mockSpaces.default;
+  // Ensure all visible NFTs have transform data initialized
+  useEffect(() => {
+    if (visibleNFTs.size === 0) return;
+    
+    let needsUpdate = false;
+    const updates = new Map(objectTransforms);
+    
+    visibleNFTs.forEach(nftId => {
+      if (!updates.has(nftId)) {
+        updates.set(nftId, {
+          position: [0, 1, 0],
+          rotation: [0, 0, 0],
+          scale: 1,
+        });
+        needsUpdate = true;
+      }
+    });
+    
+    if (needsUpdate) {
+      setObjectTransforms(updates);
+    }
+  }, [visibleNFTs, objectTransforms]);
 
-      const mockSpace: SpaceData = {
-        kioskId,
-        name: selectedSpace.name!,
-        description: selectedSpace.description!,
-        coverImage: "",
-        configQuilt: "",
-        subscriptionPrice: selectedSpace.subscriptionPrice!,
-        creator: currentAccount?.address || "0xabc123...",
-      };
+  // 將可見的 NFT 轉換成 3D 模型列表
+  const visibleModels = useMemo<Model3DItem[]>(() => {
+    return nfts
+      .filter(nft => visibleNFTs.has(nft.id))
+      .map(nft => {
+        const transform = objectTransforms.get(nft.id);
+        
+        return {
+          id: nft.id,
+          name: nft.id, // Use ID for reliable picking
+          modelUrl: nft.glbFile ? getWalrusBlobUrl(nft.glbFile) : (nft.imageUrl || ''), // Use image URL for 2D items if needed
+          is2D: normalizeObjectType(nft.objectType) === '2d', // Pass 2D flag
+          position: transform ? {
+            x: transform.position[0],
+            y: transform.position[1],
+            z: transform.position[2],
+          } : { x: 0, y: 1, z: 0 },
+          rotation: transform ? {
+            x: transform.rotation[0],
+            y: transform.rotation[1],
+            z: transform.rotation[2],
+          } : { x: 0, y: 0, z: 0 },
+          scale: transform ? {
+            x: transform.scale,
+            y: transform.scale,
+            z: transform.scale,
+          } : { x: 1, y: 1, z: 1 },
+        };
+      });
+  }, [nfts, visibleNFTs, objectTransforms]);
 
-      setSpaceData(mockSpace);
-    } catch (error) {
-      console.error("Failed to load space:", error);
-    } finally {
-      setLoading(false);
+  const checkOwnership = async () => {
+    const verified = await verifyOwnership(spaceId);
+    setIsVerified(verified);
+    if (!verified) {
+      router.push(`/space/${spaceId}`);
     }
   };
 
-  if (loading) {
+  const loadConfig = async () => {
+    if (!space?.configQuilt) return;
+    
+    try {
+      const config = await downloadConfigFromWalrus(space.configQuilt);
+      const objects = config.objects.map(obj => ({
+        id: obj.nftId,
+        nftId: obj.nftId,
+        objectType: obj.objectType,
+        name: `NFT ${obj.nftId.slice(0, 8)}`,
+        transform: {
+          position: obj.position,
+          rotation: obj.rotation,
+          scale: obj.scale,
+        },
+        visible: obj.visible,
+      } as SceneObject));
+      
+      setObjects(objects);
+    } catch (err) {
+      console.error('Failed to load config:', err);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    if (!ownershipNFT) {
+      alert('Ownership NFT not found');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      const config = serializeConfig(getAllObjects());
+      const blobId = await uploadConfigToWalrus(config);
+
+      const tx = updateSpaceConfig(
+        spaceId,
+        ownershipNFT.ownershipId,
+        {
+          newConfigQuilt: blobId,
+        }
+      );
+
+      signAndExecute(
+        {
+          transaction: tx,
+          chain: SUI_CHAIN,
+        },
+        {
+          onSuccess: () => {
+            alert('Configuration saved successfully!');
+          },
+          onError: (err) => {
+            console.error('Failed to save config:', err);
+            alert('Failed to save configuration');
+          },
+        }
+      );
+    } catch (err: any) {
+      console.error('Save failed:', err);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Handle Edit button click from NFT panel
+  const handleEditTransform = useCallback((nftId: string) => {
+    if (!threeSceneRef.current) return;
+    
+    // Toggle selection
+    if (selectedModelId === nftId) {
+      setSelectedModelId(null);
+      threeSceneRef.current.detachTransformControls();
+    } else {
+      setSelectedModelId(nftId);
+      
+      // Attach transform controls to the model
+      const success = threeSceneRef.current.attachTransformControlsById(nftId);
+      
+      if (!success) {
+        console.warn('Could not find model:', nftId);
+      }
+    }
+  }, [selectedModelId]);
+
+  // Handle transform changes from SceneManager (drag/gizmo)
+  const handleTransformChange = useCallback(() => {
+    if (!threeSceneRef.current || !selectedModelId) return;
+      
+      const sceneState = threeSceneRef.current.getSceneState();
+      const selectedModel = sceneState.find(m => m.id === selectedModelId);
+      
+      if (selectedModel && selectedModel.position) {
+        setObjectTransforms(prev => {
+          const next = new Map(prev);
+          const current = next.get(selectedModelId) || { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
+          
+          const newPos = [selectedModel.position.x, selectedModel.position.y, selectedModel.position.z];
+        const newRot = [selectedModel.rotation.x, selectedModel.rotation.y, selectedModel.rotation.z];
+        const newScale = selectedModel.scale.x; // Assuming uniform scale for now, or take x
+
+        // Check if anything changed
+        if (
+          JSON.stringify(current.position) !== JSON.stringify(newPos) ||
+          JSON.stringify(current.rotation) !== JSON.stringify(newRot) ||
+          current.scale !== newScale
+        ) {
+            next.set(selectedModelId, {
+              ...current,
+              position: newPos as [number, number, number],
+            rotation: newRot as [number, number, number],
+            scale: newScale,
+            });
+            return next;
+          }
+          return prev;
+        });
+      }
+  }, [selectedModelId]);
+
+  // Register callbacks
+  useEffect(() => {
+    if (threeSceneRef.current) {
+      threeSceneRef.current.setTransformCallbacks(
+        undefined, // onDraggingChanged
+        handleTransformChange
+      );
+    }
+  }, [handleTransformChange]);
+
+  // Handle transform changes from UI (NFT Panel)
+  const handleTransformUpdate = useCallback((nftId: string, transform: ObjectTransform) => {
+    // Update local transform state
+    setObjectTransforms(prev => {
+      const next = new Map(prev);
+      next.set(nftId, transform);
+      return next;
+    });
+    
+    // Update useSpaceEditor state (this triggers 3D model re-render)
+    updateObjectTransform(nftId, transform);
+    
+    // Also update 3D scene directly for immediate visual feedback
+    if (threeSceneRef.current) {
+      threeSceneRef.current.updateModelPosition(nftId, {
+        x: transform.position[0],
+        y: transform.position[1],
+        z: transform.position[2],
+      });
+      threeSceneRef.current.updateModelRotation(nftId, {
+        x: transform.rotation[0],
+        y: transform.rotation[1],
+        z: transform.rotation[2],
+      });
+      threeSceneRef.current.updateModelScale(nftId, {
+        x: transform.scale,
+        y: transform.scale,
+        z: transform.scale,
+      });
+    }
+  }, [updateObjectTransform]);
+
+  const selectedTransform = useMemo(() => {
+    if (!selectedModelId) return {
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1, z: 1 }
+    };
+    
+    const t = objectTransforms.get(selectedModelId) || { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 };
+    return {
+      position: { x: t.position[0], y: t.position[1], z: t.position[2] },
+      rotation: { x: t.rotation[0], y: t.rotation[1], z: t.rotation[2] },
+      scale: { x: t.scale, y: t.scale, z: t.scale }
+    };
+  }, [selectedModelId, objectTransforms]);
+
+  const handleClosePanel = () => {
+    setSelectedModelId(null);
+    threeSceneRef.current?.detachTransformControls();
+  };
+
+  if (loading || isVerifying) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center" style={{ fontFamily: 'Georgia, serif' }}>
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <RetroPanel className="p-8">
-          <div className="text-center">
-            <div className="inline-block animate-spin text-3xl text-gray-400 mb-4">
-              ⟳
-            </div>
-            <p className="text-sm text-gray-600">Loading space...</p>
+          <div className="text-center" style={{ fontFamily: 'Georgia, serif' }}>
+            <div className="inline-block animate-spin text-4xl text-gray-400 mb-4">⟳</div>
+            <p className="text-gray-600">Loading space editor...</p>
           </div>
         </RetroPanel>
       </div>
     );
   }
 
-  if (!spaceData) {
+  if (error || !space || !isVerified) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center" style={{ fontFamily: 'Georgia, serif' }}>
-        <RetroPanel className="p-8 text-center">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">Space Not Found</h2>
-          <p className="text-sm text-gray-600 mb-4">The space you're looking for doesn't exist.</p>
-          <RetroButton onClick={() => router.push("/")} variant="primary">
-            Back to Atrium
-          </RetroButton>
-        </RetroPanel>
-      </div>
-    );
-  }
-
-  // Check if user is the creator
-  if (currentAccount?.address !== spaceData.creator) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center" style={{ fontFamily: 'Georgia, serif' }}>
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <RetroPanel className="p-8 text-center">
           <h2 className="text-lg font-bold text-gray-800 mb-4">Access Denied</h2>
-          <p className="text-sm text-gray-600 mb-4">You don't have permission to edit this space.</p>
+          <p className="text-sm text-gray-600 mb-4">
+            {error?.message || "You don't have permission to edit this space."}
+          </p>
           <div className="flex gap-3 justify-center">
-            <RetroButton onClick={() => router.push(`/space/${kioskId}`)} variant="secondary">
+            <RetroButton onClick={() => router.push(`/space/${spaceId}`)} variant="secondary">
               View Space
             </RetroButton>
             <RetroButton onClick={() => router.push("/")} variant="primary">
-              Back to Atrium
+              Back to Home
             </RetroButton>
           </div>
         </RetroPanel>
@@ -155,222 +361,264 @@ export default function SpaceEditPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100" style={{ fontFamily: 'Georgia, serif' }}>
-      {/* Header Bar */}
-      <RetroPanel className="mb-0 rounded-none p-4 flex items-center justify-between border-b">
-        <div className="flex items-center gap-4">
-          <RetroButton
-            onClick={() => router.push(`/space/${kioskId}`)}
-            variant="secondary"
-            size="sm"
-          >
-            ← Back to Space
-          </RetroButton>
-          <div>
-            <h1 className="text-lg font-bold text-gray-800" style={{ fontFamily: 'Georgia, serif' }}>
-              Edit: {spaceData.name}
-            </h1>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              3D Space Editor
-            </p>
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      {/* Header */}
+      <RetroPanel className="mb-0 rounded-none p-4 border-b">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <RetroButton
+              onClick={() => router.push(`/space/${spaceId}`)}
+              variant="secondary"
+              size="sm"
+            >
+              ← Back
+            </RetroButton>
+            <div>
+              <h1 className="text-lg font-bold text-gray-800" style={{ fontFamily: 'Georgia, serif' }}>
+                Edit: {space.name}
+              </h1>
+              <p className="text-xs text-gray-500">Space Editor</p>
+            </div>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
+          
           <RetroButton
-            onClick={() => setIsEditMode(!isEditMode)}
-            variant={isEditMode ? "primary" : "secondary"}
-            size="sm"
-          >
-            {isEditMode ? "Exit Edit" : "Edit Mode"}
-          </RetroButton>
-          <RetroButton
-            onClick={() => {
-              // TODO: Save changes
-              console.log("Saving changes...");
-            }}
+            onClick={handleSaveConfig}
             variant="primary"
             size="sm"
+            disabled={isSaving || !editorState.pendingChanges}
           >
-            Save Changes
+            {isSaving ? 'Saving...' : 'Save Changes'}
           </RetroButton>
         </div>
       </RetroPanel>
 
-      {/* Main Content Area */}
-      <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 80px)' }}>
-        {/* Sidebar */}
-        <RetroPanel className="w-80 h-full flex-shrink-0 rounded-none border-r overflow-y-auto scrollbar-hidden">
+      {/* Mobile Tabs */}
+      <div className="md:hidden border-b" style={{ borderColor: '#d1d5db' }}>
+        <div className="flex overflow-x-auto scrollbar-hidden">
+          {[
+            { id: 'scene', label: 'Scene', icon: '🎭' },
+            { id: 'nfts', label: 'NFTs', icon: '🎨' },
+            { id: 'content', label: 'Content', icon: '📚' },
+            { id: 'settings', label: 'Settings', icon: '⚙️' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`
+                flex-1 min-w-fit px-4 py-3 text-sm transition-colors
+                ${activeTab === tab.id ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-500' : 'text-gray-600'}
+              `}
+              style={{ fontFamily: 'Georgia, serif' }}
+            >
+              <span className="mr-2">{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Desktop: Sidebar */}
+        <div className="hidden md:block w-80 border-r overflow-y-auto" style={{ borderColor: '#d1d5db' }}>
           <div className="p-4 space-y-4">
-            {/* Space Settings */}
-            <div>
-              <RetroHeading 
-                title="Space Settings"
-                subtitle="Configure your 3D world"
-                className="mb-4"
-              />
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1 uppercase tracking-wide">
-                    Space Name
-                  </label>
-                  <RetroPanel variant="inset" className="p-0">
-                    <input
-                      type="text"
-                      value={spaceData.name}
-                      onChange={(e) => setSpaceData({ ...spaceData, name: e.target.value })}
-                      className="w-full px-3 py-2 bg-transparent border-0 outline-none"
-                      style={{ fontFamily: 'Georgia, serif' }}
-                    />
-                  </RetroPanel>
-                </div>
+            <NFTListPanel
+              kioskId={space.marketplaceKioskId}
+              visibleNFTs={visibleNFTs}
+              objectTransforms={objectTransforms}
+              selectedNFTId={selectedModelId}
+              onEditTransform={handleEditTransform}
+              onTransformChange={handleTransformUpdate}
+              onToggleVisibility={(nftId) => {
+                const isCurrentlyVisible = visibleNFTs.has(nftId);
+                
+                setVisibleNFTs(prev => {
+                  const next = new Set(prev);
+                  if (next.has(nftId)) {
+                    next.delete(nftId);
+                  } else {
+                    next.add(nftId);
+                  }
+                  return next;
+                });
 
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1 uppercase tracking-wide">
-                    Description
-                  </label>
-                  <RetroPanel variant="inset" className="p-0">
-                    <textarea
-                      value={spaceData.description}
-                      onChange={(e) => setSpaceData({ ...spaceData, description: e.target.value })}
-                      className="w-full px-3 py-2 bg-transparent border-0 outline-none resize-none"
-                      style={{ fontFamily: 'Georgia, serif' }}
-                      rows={3}
-                    />
-                  </RetroPanel>
-                </div>
-
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1 uppercase tracking-wide">
-                    Cover Image
-                  </label>
-                  <RetroPanel variant="inset" className="p-0">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="w-full px-3 py-2 bg-transparent border-0 outline-none"
-                      style={{ fontFamily: 'Georgia, serif' }}
-                    />
-                  </RetroPanel>
-                </div>
-              </div>
-            </div>
-
-            {/* 3D Objects */}
-            <div>
-              <h3 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
-                3D Objects
-              </h3>
-              
-              <div className="space-y-2">
-                <RetroButton variant="secondary" className="w-full" size="sm">
-                  + Add Object
-                </RetroButton>
-                <RetroButton variant="secondary" className="w-full" size="sm">
-                  📁 Import GLB
-                </RetroButton>
-                <RetroButton variant="secondary" className="w-full" size="sm">
-                  🎨 Add Texture
-                </RetroButton>
-              </div>
-            </div>
-
-            {/* Lighting */}
-            <div>
-              <h3 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
-                Lighting & Environment
-              </h3>
-              
-              <div className="space-y-2">
-                <RetroButton variant="secondary" className="w-full" size="sm">
-                  ☀️ Ambient Light
-                </RetroButton>
-                <RetroButton variant="secondary" className="w-full" size="sm">
-                  💡 Point Light
-                </RetroButton>
-                <RetroButton variant="secondary" className="w-full" size="sm">
-                  🌅 Environment Map
-                </RetroButton>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="pt-4 border-t" style={{ borderColor: '#d1d5db' }}>
-              <div className="space-y-2">
-                <RetroButton 
-                  onClick={() => router.push(`/space/${kioskId}`)}
-                  variant="secondary" 
-                  className="w-full"
-                >
-                  Preview Space
-                </RetroButton>
-                <RetroButton 
-                  variant="primary" 
-                  className="w-full"
-                  onClick={() => {
-                    // TODO: Publish changes
-                    console.log("Publishing space...");
-                  }}
-                >
-                  Publish Changes
-                </RetroButton>
-              </div>
-            </div>
-          </div>
-        </RetroPanel>
-
-        {/* 3D Scene Area */}
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 relative" style={{ backgroundColor: '#f9fafb' }}>
-            <ThreeScene
-              kioskId={spaceData.kioskId}
-              enableGallery={true}
+                // 如果是首次顯示，將 NFT 添加到 editor state 並初始化 transform
+                if (!isCurrentlyVisible) {
+                  const nft = nfts.find(n => n.id === nftId);
+                  if (nft) {
+                    const initialTransform = {
+                      position: [0, 1, 0] as [number, number, number],
+                      rotation: [0, 0, 0] as [number, number, number],
+                      scale: 1,
+                    };
+                    
+                    // Initialize transform data (force set even if exists)
+                    setObjectTransforms(prev => {
+                      const next = new Map(prev);
+                      // Only initialize if not already set
+                      if (!next.has(nftId)) {
+                        next.set(nftId, initialTransform);
+                      }
+                      return next;
+                    });
+                    
+                    addObject({
+                      id: nftId,
+                      nftId: nftId,
+                      objectType: nft.objectType,
+                      name: nft.name,
+                      thumbnail: nft.imageUrl,
+                      transform: initialTransform,
+                      visible: true,
+                    });
+                  }
+                } else {
+                  // When hiding, just toggle visibility
+                  toggleObjectVisibility(nftId);
+                }
+              }}
+              onScaleChange={(nftId, scale) => {
+                updateObjectScale(nftId, scale);
+              }}
+              onList={(nftId) => console.log('List NFT:', nftId)}
+              onDelist={(nftId) => console.log('Delist NFT:', nftId)}
             />
-            
-            {isEditMode && (
-              <div className="absolute top-4 left-4 z-10">
-                <RetroPanel className="p-3">
-                  <p className="text-sm font-medium text-gray-700" style={{ fontFamily: 'Georgia, serif' }}>
-                    🎯 Edit Mode Active
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Click objects to select and modify
-                  </p>
-                </RetroPanel>
-              </div>
-            )}
           </div>
+        </div>
 
-          {/* Bottom Control Panel */}
+        {/* Mobile: Tabbed Content */}
+        <div className="md:hidden flex-1 overflow-hidden">
+          {activeTab === 'scene' && (
+            <RetroFrameCanvas className="h-full">
+              <ThreeScene 
+                ref={threeSceneRef}
+                spaceId={spaceId} 
+                models={visibleModels}
+                enableGallery={true} 
+              />
+            </RetroFrameCanvas>
+          )}
+          {activeTab === 'nfts' && (
+            <div className="h-full overflow-y-auto p-4">
+              <NFTListPanel
+                kioskId={space.marketplaceKioskId}
+                visibleNFTs={visibleNFTs}
+                objectTransforms={objectTransforms}
+                selectedNFTId={selectedModelId}
+                onEditTransform={handleEditTransform}
+                onTransformChange={handleTransformUpdate}
+                onToggleVisibility={(nftId) => {
+                  const isCurrentlyVisible = visibleNFTs.has(nftId);
+                  
+                  setVisibleNFTs(prev => {
+                    const next = new Set(prev);
+                    if (next.has(nftId)) {
+                      next.delete(nftId);
+                    } else {
+                      next.add(nftId);
+                    }
+                    return next;
+                  });
+
+                  // 如果是首次顯示，將 NFT 添加到 editor state 並初始化 transform
+                  if (!isCurrentlyVisible) {
+                    const nft = nfts.find(n => n.id === nftId);
+                    if (nft) {
+                      const initialTransform = {
+                        position: [0, 1, 0] as [number, number, number],
+                        rotation: [0, 0, 0] as [number, number, number],
+                        scale: 1,
+                      };
+                      
+                      // Initialize transform data
+                      setObjectTransforms(prev => {
+                        const next = new Map(prev);
+                        next.set(nftId, initialTransform);
+                        return next;
+                      });
+                      
+                      addObject({
+                        id: nftId,
+                        nftId: nftId,
+                        objectType: nft.objectType,
+                        name: nft.name,
+                        thumbnail: nft.imageUrl,
+                        transform: initialTransform,
+                        visible: true,
+                      });
+                    }
+                  } else {
+                    toggleObjectVisibility(nftId);
+                  }
+                }}
+                onScaleChange={(nftId, scale) => updateObjectScale(nftId, scale)}
+                onList={(nftId) => console.log('List NFT:', nftId)}
+                onDelist={(nftId) => console.log('Delist NFT:', nftId)}
+              />
+            </div>
+          )}
+          {activeTab === 'content' && ownershipNFT && (
+            <ContentManager 
+              spaceId={spaceId} 
+              ownershipId={ownershipNFT.ownershipId}
+            />
+          )}
+          {activeTab === 'settings' && (
+            <div className="h-full overflow-y-auto p-4">
+              <ScreenConfig
+                config={{ contentType: 'none', blobId: '', autoplay: false }}
+                onChange={(config) => console.log('Screen config:', config)}
+                availableContent={[]}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Desktop: 3D Scene */}
+        <div className="hidden md:flex flex-1 flex-col">
+          <RetroFrameCanvas className="flex-1">
+            <ThreeScene 
+              ref={threeSceneRef}
+              spaceId={spaceId} 
+              models={visibleModels}
+              enableGallery={true} 
+            />
+          </RetroFrameCanvas>
+
           <RetroPanel className="p-4 rounded-none border-t">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <RetroButton
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  variant={isEditMode ? "primary" : "secondary"}
+                  onClick={() => setEditMode(!editorState.isEditMode)}
+                  variant={editorState.isEditMode ? "primary" : "secondary"}
                   size="sm"
                 >
-                  {isEditMode ? "✏️ Editing" : "👁️ Preview"}
-                </RetroButton>
-                <RetroButton
-                  variant="secondary"
-                  size="sm"
-                >
-                  🔄 Reset View
-                </RetroButton>
-                <RetroButton
-                  variant="secondary"
-                  size="sm"
-                >
-                  📷 Take Screenshot
+                  {editorState.isEditMode ? '✏️ Editing' : '👁️ Preview'}
                 </RetroButton>
               </div>
-              <div className="text-sm" style={{ fontFamily: 'Georgia, serif' }}>
-                <span className="text-gray-600">Creator Mode</span>
+              <div className="text-sm text-gray-600" style={{ fontFamily: 'Georgia, serif' }}>
+                {editorState.pendingChanges && '• Unsaved changes'}
               </div>
             </div>
           </RetroPanel>
+        </div>
+
+        {/* Desktop: Right Panel */}
+        <div className="hidden lg:block w-80 border-l overflow-y-auto" style={{ borderColor: '#d1d5db' }}>
+          <div className="p-4 space-y-4">
+            <ScreenConfig
+              config={{ contentType: 'none', blobId: '', autoplay: false }}
+              onChange={(config) => console.log('Screen config:', config)}
+              availableContent={[]}
+            />
+            
+            {ownershipNFT && (
+              <ContentManager 
+                spaceId={spaceId} 
+                ownershipId={ownershipNFT.ownershipId}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

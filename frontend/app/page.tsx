@@ -4,17 +4,17 @@ import { useState } from "react";
 import { useCurrentAccount, ConnectButton } from "@mysten/dapp-kit";
 import { IdentityRegistration } from "@/components/identity/IdentityRegistration";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { SpacePreviewWindow } from "@/components/space/SpacePreviewWindow";
-import { SpaceList } from "@/components/space/SpaceList";
-import { SubscribedSpaces } from "@/components/space/SubscribedSpaces";
+import { SpacePreviewWindow, SpaceList, SubscribedSpaces } from "@/components/space/display";
 import { SettingsPage } from "@/components/settings/SettingsPage";
 import { RetroPanel } from "@/components/common/RetroPanel";
 import { RetroButton } from "@/components/common/RetroButton";
+import { useIdentity } from "@/hooks/useIdentity";
 
 export default function Home() {
   const currentAccount = useCurrentAccount();
-  const [hasIdentity, setHasIdentity] = useState(false);
+  const { hasIdentity, loading: identityLoading, refetch: refetchIdentity } = useIdentity();
   const [activeView, setActiveView] = useState<'explore' | 'my-space' | 'subscribed' | 'settings'>('explore');
+  const [skippedRegistration, setSkippedRegistration] = useState(false);
 
   // Welcome screen for non-connected users
   if (!currentAccount) {
@@ -60,8 +60,23 @@ export default function Home() {
     );
   }
 
-  // Identity registration for new users
-  if (!hasIdentity) {
+  // Loading state
+  if (currentAccount && identityLoading) {
+    return (
+      <main className="h-screen flex flex-col items-center justify-center" style={{ backgroundColor: '#fafafa' }}>
+        <RetroPanel className="p-8">
+          <div className="text-center">
+            <p className="text-gray-600" style={{ fontFamily: 'Georgia, serif' }}>
+              Loading your profile...
+            </p>
+          </div>
+        </RetroPanel>
+      </main>
+    );
+  }
+
+  // Identity registration for new users (if they haven't skipped)
+  if (currentAccount && !hasIdentity && !skippedRegistration) {
     return (
       <main className="h-screen flex flex-col-reverse md:flex-row overflow-hidden" style={{ backgroundColor: '#fafafa' }}>
         {/* Sidebar - only Explore enabled */}
@@ -69,7 +84,12 @@ export default function Home() {
         
         {/* Identity registration content */}
         <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4">
-          <IdentityRegistration onComplete={() => setHasIdentity(true)} />
+          <IdentityRegistration 
+            onComplete={() => {
+              setSkippedRegistration(true);
+              refetchIdentity();
+            }} 
+          />
         </div>
       </main>
     );
@@ -79,14 +99,38 @@ export default function Home() {
   return (
     <main className="h-screen flex flex-col-reverse md:flex-row overflow-hidden" style={{ backgroundColor: '#fafafa' }}>
       {/* Sidebar - Desktop left, Mobile bottom */}
-      <Sidebar onViewChange={setActiveView} activeView={activeView} />
+      <Sidebar 
+        onViewChange={(view) => {
+          if (!hasIdentity && view !== 'explore') {
+            return;
+          }
+          setActiveView(view);
+        }} 
+        activeView={activeView}
+        hasIdentity={hasIdentity}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 min-h-0 p-2 md:p-4 overflow-hidden">
         {activeView === 'explore' ? (
           <SpaceList />
+        ) : !hasIdentity ? (
+          <RetroPanel className="h-full flex flex-col items-center justify-center p-8">
+            <div className="text-center max-w-md">
+              <span className="text-6xl mb-4 block">🔒</span>
+              <h2 className="text-2xl font-bold text-gray-800 mb-3" style={{ fontFamily: 'Georgia, serif' }}>
+                Identity Required
+              </h2>
+              <p className="text-gray-600 mb-6" style={{ fontFamily: 'Georgia, serif' }}>
+                Please create your Atrium Identity to access this feature.
+              </p>
+              <RetroButton onClick={() => setSkippedRegistration(false)}>
+                Create Identity
+              </RetroButton>
+            </div>
+          </RetroPanel>
         ) : activeView === 'my-space' ? (
-        <SpacePreviewWindow />
+          <SpacePreviewWindow />
         ) : activeView === 'subscribed' ? (
           <SubscribedSpaces />
         ) : activeView === 'settings' ? (
