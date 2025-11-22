@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentAccount } from "@mysten/dapp-kit";
 import { ThreeScene } from "@/components/3d/ThreeScene";
@@ -10,7 +10,6 @@ import { RetroButton } from "@/components/common/RetroButton";
 import { LandingPageView } from "./LandingPageView";
 import { SpaceDetailSidebar } from "./SpaceDetailSidebar";
 import { SpaceDetailMobileNav } from "./SpaceDetailMobileNav";
-import { ContentItemData } from "../content";
 import { getAccessStatus } from "../ui";
 
 // Hooks
@@ -19,6 +18,7 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useSpaceSubscription } from "@/hooks/useSpaceSubscription";
 import { useSpaceViewMode } from "@/hooks/useSpaceViewMode";
 import { useSpaceContent } from "@/hooks/useSpaceContent";
+import { useSpaceAuthToken } from "@/hooks/useSpaceAuthToken";
 
 interface SpaceDetailProps {
   space?: {
@@ -72,11 +72,30 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
     ? currentAccount.address.toLowerCase() === safeSpace.creator?.toLowerCase()
     : false;
   
+  // Query user's authentication token (SpaceOwnership or Subscription)
+  const { id: authId, loading: authLoading, error: authError, refetch: refetchAuthToken } = useSpaceAuthToken(
+    safeSpace.id,
+    currentAccount?.address,
+    isCreator
+  );
+  
+  // Determine actual subscription status based on authId
+  // User has access if they are creator OR have valid authId (subscription/ownership)
+  const hasAccess = isCreator || !!authId;
+  
+  // Update isSubscribed based on authId for backward compatibility
+  React.useEffect(() => {
+    if (authId && !isCreator) {
+      // User has subscription NFT
+      setIsSubscribed(true);
+    }
+  }, [authId, isCreator, setIsSubscribed]);
+  
   const { viewMode, weatherMode, setViewMode, setWeatherMode } = useSpaceViewMode(isCreator ? 'landing' : '3d');
   const { openEssay, openVideo, renderWindows } = useContentWindows();
   const { contentItems: displayItems } = useSpaceContent(safeSpace.id);
 
-  const accessStatus = getAccessStatus(currentAccount, isSubscribed, isCreator);
+  const accessStatus = getAccessStatus(currentAccount, hasAccess, isCreator);
 
   const handleEditSpace = () => {
     router.push(`/space/${safeSpace.id}/edit`);
@@ -92,7 +111,7 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
   const subscribeTab = { id: "subscribe", label: "Subscribe", icon: "🔒" };
   
   // Add subscribe tab for non-subscribers on mobile
-  const tabs = (currentAccount && !isSubscribed && !isCreator) 
+  const tabs = (currentAccount && !hasAccess && !isCreator) 
     ? [...contentTabs, subscribeTab]
     : contentTabs;
 
@@ -133,18 +152,35 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
       return;
     }
     
+    // Check if authentication token is available
+    if (item.isLocked && !authId) {
+      if (authLoading) {
+        alert('Please wait, loading authentication...');
+        return;
+      }
+      if (authError) {
+        alert(`Cannot access content: ${authError}`);
+        return;
+      }
+      alert('Cannot access content: Authentication token not found');
+      return;
+    }
+    
     console.log('📖 [SpaceDetail] Opening content:', {
       contentId: item.id,
       contentLocked: item.isLocked,
       spaceId,
       blobId: actualBlobId,
+      isCreator,
+      isSubscribed,
+      authId,
     });
 
     // Open appropriate window with item data
     if (item.type === 'video') {
-      openVideo(actualBlobId, spaceId, item.title, item.isLocked || false);
+      openVideo(actualBlobId, spaceId, item.title, item.isLocked || false, isCreator, authId || undefined);
     } else if (item.type === 'essay') {
-      openEssay(actualBlobId, spaceId, item.title, item.isLocked || false);
+      openEssay(actualBlobId, spaceId, item.title, item.isLocked || false, isCreator, authId || undefined);
     }
     
     setIsContentMenuOpen(false);
@@ -178,7 +214,7 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
           <SpaceDetailMobileNav
             space={safeSpace}
             currentAccount={currentAccount}
-            isSubscribed={isSubscribed}
+            isSubscribed={hasAccess}
             identityId={identityId}
             isCreator={isCreator}
             activeTab={activeTab}
@@ -197,6 +233,8 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
               setIsSubscribed(true);
               setActiveTab("merch");
               setIsContentMenuOpen(false);
+              // Refetch auth token to get subscription NFT
+              refetchAuthToken();
             }}
             onUnlock={(itemId) => {
               handleUnlockContent(itemId);
@@ -219,7 +257,7 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
             space={safeSpace}
             isLoading={isLoading}
             currentAccount={currentAccount}
-            isSubscribed={isSubscribed}
+            isSubscribed={hasAccess}
             identityId={identityId}
             isCreator={isCreator}
             activeTab={activeTab === "subscribe" ? "merch" : activeTab}
@@ -230,6 +268,8 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
             onSubscribed={() => {
               setIsSubscribed(true);
               setShowSubscribeForm(false);
+              // Refetch auth token to get subscription NFT
+              refetchAuthToken();
             }}
             onShowSubscribeForm={setShowSubscribeForm}
             onUnlock={handleUnlockContent}
@@ -307,10 +347,16 @@ export function SpaceDetail({ space, isLoading = false, spaceId }: SpaceDetailPr
             <LandingPageView 
               space={safeSpace}
               contentItems={displayItems}
-              isSubscribed={isSubscribed}
+              isSubscribed={hasAccess}
               isCreator={isCreator}
+              identityId={identityId}
               onUnlock={handleUnlockContent}
               onView={handleViewContent}
+              onSubscribed={() => {
+                setIsSubscribed(true);
+                // Refetch auth token to get subscription NFT
+                refetchAuthToken();
+              }}
               // onUpload is intentionally not passed - SpaceDetail is read-only view for all users
               // Upload functionality is only available in SpacePreviewWindow (creator's edit mode)
             />

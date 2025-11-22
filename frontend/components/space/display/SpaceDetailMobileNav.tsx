@@ -7,6 +7,7 @@ import { SubscribeButton } from "@/components/subscription/SubscribeButton";
 
 interface SpaceDetailMobileNavProps {
   space: {
+    id: string; // Space object ID
     kioskId: string;
     kioskCapId?: string;
     creator: string;
@@ -61,7 +62,7 @@ export function SpaceDetailMobileNav({
                     </span>
                   </div>
                   <SubscribeButton
-                    spaceKioskId={space.kioskId}
+                    spaceId={space.id}
                     spaceKioskCapId={space.kioskCapId || space.kioskId}
                     creatorAddress={space.creator}
                     price={space.subscriptionPrice}

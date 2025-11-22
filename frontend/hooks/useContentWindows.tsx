@@ -20,7 +20,19 @@ export function useContentWindows() {
     resizeWindow,
   } = useWindowManager();
 
-  const openEssay = (blobId: string, spaceId: string, title: string, isLocked: boolean) => {
+  /**
+   * Open essay - can be called as creator or subscriber
+   * @param isCreator - true if viewing as creator (uses SpaceOwnership), false if subscriber
+   * @param authId - ownershipId if isCreator, subscriptionId if subscriber
+   */
+  const openEssay = (
+    blobId: string,
+    spaceId: string,
+    title: string,
+    isLocked: boolean,
+    isCreator: boolean = false,
+    authId?: string,
+  ) => {
     openWindow('essay-reader', {
       title: title,
       data: {
@@ -28,11 +40,25 @@ export function useContentWindows() {
         spaceId,
         title,
         isLocked,
+        isCreator,
+        authId, // ownershipId or subscriptionId
       }
     });
   };
 
-  const openVideo = (blobId: string, resourceId: string, title: string, isLocked: boolean) => {
+  /**
+   * Open video - can be called as creator or subscriber
+   * @param isCreator - true if viewing as creator (uses SpaceOwnership), false if subscriber
+   * @param authId - ownershipId if isCreator, subscriptionId if subscriber
+   */
+  const openVideo = (
+    blobId: string,
+    resourceId: string,
+    title: string,
+    isLocked: boolean,
+    isCreator: boolean = false,
+    authId?: string,
+  ) => {
     openWindow('video-player', {
       title: title,
       data: {
@@ -40,6 +66,8 @@ export function useContentWindows() {
         resourceId,
         title,
         isLocked,
+        isCreator,
+        authId, // ownershipId or subscriptionId
       }
     });
   };
@@ -66,6 +94,8 @@ export function useContentWindows() {
                   resourceId={window.data?.resourceId}
                   title={window.data?.title}
                   isLocked={window.data?.isLocked}
+                  isCreator={window.data?.isCreator}
+                  authId={window.data?.authId}
                 />
               );
             } else if (window.type === 'essay-reader') {
@@ -75,6 +105,8 @@ export function useContentWindows() {
                   spaceId={window.data?.spaceId}
                   title={window.data?.title}
                   isLocked={window.data?.isLocked}
+                  isCreator={window.data?.isCreator}
+                  authId={window.data?.authId}
                 />
               );
             }

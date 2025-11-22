@@ -13,19 +13,25 @@ interface VideoWindowProps {
   resourceId: string;
   title: string;
   isLocked: boolean;
+  isCreator?: boolean;
+  authId?: string;
 }
 
 export const VideoWindow: React.FC<VideoWindowProps> = ({ 
   blobId, 
   resourceId, 
   title, 
-  isLocked 
+  isLocked,
+  isCreator = false,
+  authId,
 }) => {
   const { content, loading, error } = useSecureContent({
     blobId,
     resourceId,
     contentType: 'video/mp4',
     isLocked,
+    isCreator,
+    authId,
   });
 
   // Cleanup blob URL on unmount

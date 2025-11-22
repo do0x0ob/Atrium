@@ -1,7 +1,6 @@
 "use client";
 
 import { RetroButton } from "@/components/common/RetroButton";
-import { RetroPanel } from "@/components/common/RetroPanel";
 import { SpaceInfoCard } from "./SpaceInfoCard";
 import { SpaceTabNavigation } from "../ui";
 import { ContentList, ContentItemData } from "../content";
@@ -9,6 +8,7 @@ import { SubscribeButton } from "@/components/subscription/SubscribeButton";
 
 interface SpaceDetailSidebarProps {
   space: {
+    id: string; // Space object ID
     kioskId: string;
     kioskCapId?: string;
     name: string;
@@ -111,7 +111,7 @@ export function SpaceDetailSidebar({
                 ← Back to Content
               </RetroButton>
               <SubscribeButton
-                spaceKioskId={space.kioskId}
+                spaceId={space.id}
                 spaceKioskCapId={space.kioskCapId || space.kioskId}
                 creatorAddress={space.creator}
                 price={space.subscriptionPrice}

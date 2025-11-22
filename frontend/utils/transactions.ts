@@ -126,21 +126,52 @@ export const initializeSpace = (
     ],
   });
   
-  // 3. Transfer ownership to recipient
+  // 3. Get Space ID from SpaceOwnership NFT
+  // Note: We'll need to query the event to get the actual space_id
+  // For now, we'll create the creator subscription in a separate transaction after Space creation
+  
+  // 4. Transfer ownership to recipient
   tx.transferObjects([ownership], recipientAddress);
   
-  // 4. Transfer change back to recipient
+  // 5. Transfer change back to recipient
   tx.transferObjects([change], recipientAddress);
 
-  // 5. Share Marketplace Kiosk (anyone can view NFTs)
+  // 6. Share Marketplace Kiosk (anyone can view NFTs)
   tx.moveCall({
     target: "0x2::transfer::public_share_object",
     arguments: [marketplaceKiosk],
     typeArguments: ["0x2::kiosk::Kiosk"],
   });
 
-  // 6. Transfer Marketplace Kiosk Cap to the creator
+  // 7. Transfer Marketplace Kiosk Cap to the creator
   tx.transferObjects([marketplaceKioskCap], recipientAddress);
+
+  return tx;
+};
+
+/**
+ * Create a lifetime subscription for the space creator
+ * Should be called after space is created
+ */
+export const createCreatorSubscription = (
+  spaceId: string,
+  creatorAddress: string,
+) => {
+  const tx = new Transaction();
+  
+  // Create creator subscription (returns Subscription NFT)
+  const [creatorSubscription] = tx.moveCall({
+    target: `${PACKAGE_ID}::subscription::create_creator_subscription`,
+    arguments: [
+      tx.object(SUBSCRIPTION_REGISTRY_ID),
+      tx.object(spaceId),
+      tx.pure.address(creatorAddress),
+      tx.object(SUI_CLOCK),
+    ],
+  });
+  
+  // Transfer subscription NFT to creator
+  tx.transferObjects([creatorSubscription], creatorAddress);
 
   return tx;
 };

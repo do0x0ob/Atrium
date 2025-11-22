@@ -4,7 +4,11 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { downloadAndDecryptContent } from '@/services/sealContent';
+import { 
+  downloadAndDecryptContent,
+  downloadAndDecryptContentAsCreator,
+  downloadAndDecryptContentAsSubscriber,
+} from '@/services/sealContent';
 import { useCurrentAccount, useSignPersonalMessage } from '@mysten/dapp-kit';
 import { getWalrusAggregatorUrl } from '@/config/walrus';
 
@@ -13,6 +17,8 @@ interface UseSecureContentOptions {
   resourceId: string;
   contentType: string;
   isLocked: boolean;
+  isCreator?: boolean;
+  authId?: string;
 }
 
 interface UseSecureContentReturn {
@@ -26,6 +32,8 @@ export function useSecureContent({
   resourceId,
   contentType,
   isLocked,
+  isCreator = false,
+  authId,
 }: UseSecureContentOptions): UseSecureContentReturn {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
@@ -85,16 +93,46 @@ export function useSecureContent({
         setLoading(true);
         setError(null);
 
-        const data = await downloadAndDecryptContent(
+        let data: string;
+
+        // Choose decryption method based on user role
+        if (isCreator) {
+          // Creator mode: use SpaceOwnership NFT
+          if (!authId) {
+            setError('Ownership ID is required for creator access');
+            return;
+          }
+          
+          console.log('🎨 Decrypting as creator with ownershipId:', authId);
+          data = await downloadAndDecryptContentAsCreator(
           blobId,
           resourceId,
+            authId,
           currentAccount.address,
           handleSign,
           contentType
         );
+        } else {
+          // Subscriber mode: use Subscription NFT
+          if (!authId) {
+            setError('Subscription ID is required for subscriber access');
+            return;
+          }
+          
+          console.log('👥 Decrypting as subscriber with subscriptionId:', authId);
+          data = await downloadAndDecryptContentAsSubscriber(
+            blobId,
+            resourceId,
+            authId,
+            currentAccount.address,
+            handleSign,
+            contentType
+          );
+        }
 
         setContent(data);
       } catch (e: any) {
+        console.error('❌ Decryption failed:', e);
         setError(e.message || "Failed to decrypt content");
       } finally {
         setLoading(false);
@@ -102,7 +140,7 @@ export function useSecureContent({
     };
 
     loadContent();
-  }, [blobId, resourceId, isLocked, currentAccount?.address, contentType, handleSign]);
+  }, [blobId, resourceId, isLocked, currentAccount?.address, contentType, handleSign, isCreator, authId]);
 
   return { content, loading, error };
 }

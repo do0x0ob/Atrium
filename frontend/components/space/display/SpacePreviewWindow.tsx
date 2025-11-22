@@ -13,6 +13,7 @@ import { NFTListPanel } from '../nft';
 import { ContentManager, ContentUploadWindow } from '../content';
 import { LandingPageView } from './LandingPageView';
 import { ExplorerLink } from '@/components/common/ExplorerLink';
+import { UpdateSubscriptionPriceForm } from '../settings/UpdateSubscriptionPriceForm';
 import { useRouter } from 'next/navigation';
 import { UserSpaceData } from '@/hooks/useUserSpaces';
 import { useSpaceEditor } from '@/hooks/useSpaceEditor';
@@ -47,7 +48,7 @@ export function SpacePreviewWindow() {
   const [isCreatingSpace, setIsCreatingSpace] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeEditTab, setActiveEditTab] = useState<'nfts' | 'content' | 'screen'>('nfts');
+  const [activeEditTab, setActiveEditTab] = useState<'nfts' | 'content' | 'screen' | 'settings'>('nfts');
   const [showUploadWindow, setShowUploadWindow] = useState(false);
   
   // Content data from custom hook
@@ -156,17 +157,24 @@ export function SpacePreviewWindow() {
     }
 
     const spaceId = selectedSpace?.spaceId || '';
+    const ownershipId = selectedSpace?.ownershipId || '';
     
     if (!spaceId || spaceId === '') {
       alert('Cannot open content: Space ID is missing');
       return;
     }
 
+    if (!ownershipId || ownershipId === '') {
+      alert('Cannot open content: Ownership ID is missing');
+      return;
+    }
+
     // Open appropriate window based on content type
+    // As creator (isCreator = true), use SpaceOwnership for authentication
     if (content.type === 'video' && content.blobId) {
-      openVideo(content.blobId, spaceId, content.title, content.isLocked || false);
+      openVideo(content.blobId, spaceId, content.title, content.isLocked || false, true, ownershipId);
     } else if (content.type === 'essay' && content.blobId) {
-      openEssay(content.blobId, spaceId, content.title, content.isLocked || false);
+      openEssay(content.blobId, spaceId, content.title, content.isLocked || false, true, ownershipId);
     }
   };
 
@@ -441,10 +449,11 @@ export function SpacePreviewWindow() {
                   { id: 'nfts', label: 'NFTs' },
                   { id: 'content', label: 'Content' },
                   { id: 'screen', label: 'Screen' },
+                  { id: 'settings', label: 'Settings' },
                 ].filter(tab => {
-                  // In landing mode, only show Content tab
+                  // In landing mode, show Content and Settings tabs only
                   if (viewMode === 'landing') {
-                    return tab.id === 'content';
+                    return tab.id === 'content' || tab.id === 'settings';
                   }
                   // In 3D mode, show all tabs
                   return true;
@@ -500,6 +509,27 @@ export function SpacePreviewWindow() {
                     onChange={setScreenConfig}
                     availableContent={[]}
                   />
+                )}
+                {activeEditTab === 'settings' && selectedSpace && (
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800 mb-2" style={{ fontFamily: 'Georgia, serif' }}>
+                        💰 Subscription Settings
+                      </h3>
+                      <p className="text-sm text-gray-600 mb-4" style={{ fontFamily: 'Georgia, serif' }}>
+                        Manage your space subscription pricing
+                      </p>
+                    </div>
+                    <UpdateSubscriptionPriceForm
+                      spaceId={selectedSpace.spaceId}
+                      ownershipId={selectedSpace.ownershipId}
+                      currentPrice={selectedSpace.subscriptionPrice || "0"}
+                      onUpdated={() => {
+                        refetch();
+                        alert('Subscription price updated successfully!');
+                      }}
+                    />
+                  </div>
                 )}
               </div>
 

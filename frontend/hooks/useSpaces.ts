@@ -64,7 +64,7 @@ export function useSpaces() {
             description: fields.description || '',
             coverImage: fields.cover_image || fields.cover_image_blob_id || '',  // Try both field names
             configQuilt: fields.config_quilt || fields.config_quilt_blob_id || '',
-            subscriptionPrice: fields.subscription_price_per_day || '0',
+            subscriptionPrice: fields.subscription_price || '0',
             creator: fields.creator || '',
             marketplaceKioskId: fields.marketplace_kiosk_id || '',
             category: 'other', // Default category, could be stored in dynamic fields

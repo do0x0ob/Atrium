@@ -15,6 +15,7 @@ interface CreateSpaceFormData {
   category: SpaceCategory;
   tags: string;
   coverImage: File | null;
+  subscriptionPrice: string; // In SUI (not MIST)
 }
 
 interface CreateSpaceFormProps {
@@ -35,6 +36,7 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
     category: "art",
     tags: "",
     coverImage: null,
+    subscriptionPrice: "0.01", // Default to 0.01 SUI per day
   });
 
   useEffect(() => {
@@ -99,8 +101,8 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
       });
       const configQuilt = await uploadBlobToWalrus(configBlob);
 
-      // Default to free subscription
-      const subscriptionPriceInMist = 0;
+      // Convert subscription price from SUI to MIST
+      const subscriptionPriceInMist = parseFloat(formData.subscriptionPrice || "0") * MIST_PER_SUI;
       const initPriceInMist = 0.1 * MIST_PER_SUI;
       
       const tx = initializeSpace(
@@ -166,6 +168,7 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
       category: "art",
       tags: "",
       coverImage: null,
+      subscriptionPrice: "0.01",
     });
     onClose();
   };
@@ -286,6 +289,34 @@ export function CreateSpaceForm({ onClose, onCreated }: CreateSpaceFormProps) {
                 Selected: {formData.coverImage.name}
               </p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wide" style={{ fontFamily: 'Georgia, serif' }}>
+              Subscription Price (SUI per day)
+            </label>
+            <RetroPanel variant="inset" className="p-0">
+              <div className="flex items-center">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={formData.subscriptionPrice}
+                  onChange={(e) => updateFormData({ subscriptionPrice: e.target.value })}
+                  className="flex-1 px-3 py-2 bg-transparent border-0 outline-none"
+                  style={{ fontFamily: 'Georgia, serif' }}
+                  placeholder="0.01"
+                />
+                <span className="px-3 text-sm text-gray-500" style={{ fontFamily: 'Georgia, serif' }}>
+                  SUI
+                </span>
+              </div>
+            </RetroPanel>
+            <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: 'Georgia, serif' }}>
+              {formData.subscriptionPrice && parseFloat(formData.subscriptionPrice) > 0 
+                ? `30 days: ${(parseFloat(formData.subscriptionPrice) * 30).toFixed(2)} SUI`
+                : "Set to 0 for free content"}
+            </p>
           </div>
 
           {/* Actions */}

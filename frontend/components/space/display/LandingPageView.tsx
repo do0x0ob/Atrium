@@ -1,11 +1,12 @@
-
+import { useState } from "react";
 import { RetroPanel } from "@/components/common/RetroPanel";
 import { RetroButton } from "@/components/common/RetroButton";
 import { ContentItemData } from "../content";
-import { SpaceInfoCard } from "./SpaceInfoCard";
 import { getWalrusBlobUrl } from "@/config/walrus";
-import { useIdentity } from "@/hooks/useIdentity";
+import { useCreatorIdentity } from "@/hooks/useCreatorIdentity";
 import { getIdentityImageBlobId } from "@/utils/identity-helpers";
+import { SubscribeButton } from "@/components/subscription/SubscribeButton";
+import { useCurrentAccount } from "@mysten/dapp-kit";
 
 interface LandingPageViewProps {
   space: any;
@@ -15,6 +16,8 @@ interface LandingPageViewProps {
   isSubscribed: boolean;
   isCreator: boolean;
   onUpload?: () => void;
+  identityId?: string | null;
+  onSubscribed?: () => void;
 }
 
 export function LandingPageView({ 
@@ -24,11 +27,16 @@ export function LandingPageView({
   onView,
   isSubscribed,
   isCreator,
-  onUpload
+  onUpload,
+  identityId,
+  onSubscribed,
 }: LandingPageViewProps) {
+  const currentAccount = useCurrentAccount();
+  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
   
-  const { identity } = useIdentity();
-  const avatarBlobId = identity ? getIdentityImageBlobId((identity.content as any)?.fields) : undefined;
+  // Get the space creator's identity to display their avatar
+  const { identity: creatorIdentity } = useCreatorIdentity(space.creator);
+  const avatarBlobId = creatorIdentity ? getIdentityImageBlobId((creatorIdentity.content as any)?.fields) : undefined;
   const avatarUrl = avatarBlobId ? getWalrusBlobUrl(avatarBlobId) : undefined;
 
   // Group content by type
@@ -114,17 +122,17 @@ export function LandingPageView({
         {/* Avatar Overlay */}
         <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
           <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white bg-white shadow-md overflow-hidden flex items-center justify-center">
-             {isCreator && avatarUrl ? (
-               <img 
-                 src={avatarUrl} 
-                 alt="Creator Avatar" 
-                 className="w-full h-full object-cover"
-               />
-             ) : (
-               <div className="w-full h-full bg-gray-100 flex items-center justify-center text-4xl md:text-5xl">
-                 👤
-               </div>
-             )}
+             {avatarUrl ? (
+              <img 
+                src={avatarUrl} 
+                alt="Creator Avatar" 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gray-100 flex items-center justify-center text-4xl md:text-5xl">
+                👤
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -141,9 +149,38 @@ export function LandingPageView({
           <div className="mt-4 flex justify-center gap-4 text-sm text-gray-500">
             <span>Created by {space.creator ? `${space.creator.slice(0,6)}...${space.creator.slice(-4)}` : 'Unknown'}</span>
             <span>•</span>
-            <span>Subscription: {space.subscriptionPrice} SUI</span>
+            <span>Subscription: {(parseInt(space.subscriptionPrice) / 1_000_000_000).toFixed(2)} SUI/day</span>
           </div>
 
+          {/* Subscribe Button - Only shown for non-creators in Explore mode */}
+          {!isCreator && !isSubscribed && currentAccount && (
+            <div className="mt-6 flex justify-center">
+              <RetroButton
+                onClick={() => setShowSubscribeModal(!showSubscribeModal)}
+                variant="primary"
+                size="lg"
+                className="shadow-lg px-8"
+              >
+                🔒 Subscribe to Unlock Premium Content
+              </RetroButton>
+            </div>
+          )}
+
+          {/* Subscribed Badge */}
+          {!isCreator && isSubscribed && (
+            <div className="mt-6">
+              <RetroPanel variant="inset" className="inline-block">
+                <div className="px-4 bg-gray-50 flex items-center gap-2">
+                  <span className="text-lg" style={{ color: '#8B6914' }}>✓</span>
+                  <span className="text-sm font-medium" style={{ fontFamily: 'Georgia, serif', color: '#8B6914' }}>
+                    Subscribed
+                  </span>
+                </div>
+              </RetroPanel>
+            </div>
+          )}
+
+          {/* Upload Button - Only shown for creators */}
           {onUpload && (
             <div className="mt-6">
               <RetroButton
@@ -157,6 +194,37 @@ export function LandingPageView({
             </div>
           )}
         </div>
+
+        {/* Subscribe Modal/Panel */}
+        {showSubscribeModal && !isCreator && !isSubscribed && (
+          <div className="mb-8 max-w-md mx-auto">
+            <RetroPanel variant="outset" className="p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-800" style={{ fontFamily: 'Georgia, serif' }}>
+                  Subscribe to {space.name}
+                </h3>
+                <RetroButton
+                  onClick={() => setShowSubscribeModal(false)}
+                  variant="secondary"
+                  size="sm"
+                >
+                  ✕
+                </RetroButton>
+              </div>
+              <SubscribeButton
+                spaceId={space.id}
+                spaceKioskCapId={space.kioskCapId || space.kioskId}
+                creatorAddress={space.creator}
+                price={space.subscriptionPrice}
+                identityId={identityId || null}
+                onSubscribed={() => {
+                  setShowSubscribeModal(false);
+                  onSubscribed?.();
+                }}
+              />
+            </RetroPanel>
+          </div>
+        )}
 
         {/* Content Sections */}
         {contentItems.length === 0 ? (

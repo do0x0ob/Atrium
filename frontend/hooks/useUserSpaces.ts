@@ -81,7 +81,7 @@ export function useUserSpaces() {
             description: spaceFields.description || '',
             coverImage: spaceFields.cover_image || spaceFields.cover_image_blob_id || '',  // Try both field names
             configQuilt: spaceFields.config_quilt || spaceFields.config_quilt_blob_id || '',
-            subscriptionPrice: spaceFields.subscription_price_per_day || '0',
+            subscriptionPrice: spaceFields.subscription_price || '0',
             creator: spaceFields.creator || '',
             marketplaceKioskId: spaceFields.marketplace_kiosk_id || '',
           } as UserSpaceData;
