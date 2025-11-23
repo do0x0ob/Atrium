@@ -4,7 +4,7 @@
 
 **Atrium** is a decentralized creator platform where creators can publish essays and videos within their spaces. What makes it unique is an **AI Weather System** that transforms each space’s atmosphere based on crypto market data, real-world time, and subscriber count.
 
-*AI lowers the barrier to creation, but we believe the true value lies in connection and co‑creation—building community bonds through interactive objects to create meaningful collaborative experiences.*
+>*AI lowers the barrier to creation, but we believe the true value lies in connection and co‑creation—building community bonds through interactive objects to create meaningful collaborative experiences.*
 
 ---
 
