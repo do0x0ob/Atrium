@@ -49,6 +49,8 @@ export function SpacePreviewWindow() {
   const [isCreatingSpace, setIsCreatingSpace] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [saveErrorMessage, setSaveErrorMessage] = useState('');
   const [activeEditTab, setActiveEditTab] = useState<'nfts' | 'content' | 'settings'>('nfts');
   const [showUploadWindow, setShowUploadWindow] = useState(false);
   
@@ -238,12 +240,16 @@ export function SpacePreviewWindow() {
 
     try {
       setIsSaving(true);
+      setSaveStatus('loading');
+      setSaveErrorMessage('');
       
       const objects = getAllObjects();
       console.log('📦 Saving objects:', objects);
       
       if (objects.length === 0) {
-        alert('No objects to save. Please add some NFTs to the scene first.');
+        setSaveStatus('error');
+        setSaveErrorMessage('No objects to save. Please add some NFTs to the scene first.');
+        setIsSaving(false);
         return;
       }
       
@@ -265,12 +271,17 @@ export function SpacePreviewWindow() {
         {
           onSuccess: () => {
             console.log('✅ Configuration saved to blockchain!');
-            alert('Configuration saved!');
+            setSaveStatus('success');
             refetch();
+            // Auto-hide success message after 3 seconds
+            setTimeout(() => {
+              setSaveStatus('idle');
+            }, 3000);
           },
           onError: (err) => {
             console.error('❌ Transaction failed:', err);
-            alert('Failed to save configuration to blockchain');
+            setSaveStatus('error');
+            setSaveErrorMessage(err.message || 'Failed to save configuration to blockchain');
           },
         }
       );
@@ -280,7 +291,8 @@ export function SpacePreviewWindow() {
         stack: err.stack,
         error: err
       });
-      alert(`Error: ${err.message || 'Unknown error'}`);
+      setSaveStatus('error');
+      setSaveErrorMessage(err.message || 'Unknown error occurred');
     } finally {
       setIsSaving(false);
     }
@@ -758,6 +770,49 @@ export function SpacePreviewWindow() {
               </div>
 
               <div className="p-3 border-t border-gray-200 bg-gray-50 shrink-0 pb-6 md:pb-3">
+                {/* Transaction Status Messages */}
+                {saveStatus === 'success' && (
+                  <RetroPanel variant="inset" className="p-3 bg-green-50 border-green-200 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">✅</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-green-800" style={{ fontFamily: 'Georgia, serif' }}>
+                          Configuration Saved!
+                        </p>
+                        <p className="text-xs text-green-600" style={{ fontFamily: 'Georgia, serif' }}>
+                          Your changes have been saved to the blockchain.
+                        </p>
+                      </div>
+                    </div>
+                  </RetroPanel>
+                )}
+
+                {saveStatus === 'error' && (
+                  <RetroPanel variant="inset" className="p-3 bg-red-50 border-red-200 mb-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-xl">❌</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-red-800 mb-1" style={{ fontFamily: 'Georgia, serif' }}>
+                          Save Failed
+                        </p>
+                        <p className="text-xs text-red-600 leading-tight" style={{ fontFamily: 'Georgia, serif' }}>
+                          {saveErrorMessage}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setSaveStatus('idle');
+                            setSaveErrorMessage('');
+                          }}
+                          className="text-xs text-red-700 underline mt-2 hover:text-red-900"
+                          style={{ fontFamily: 'Georgia, serif' }}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  </RetroPanel>
+                )}
+
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-gray-500" style={{ fontFamily: 'Georgia, serif' }}>
                     {editorState.pendingChanges ? '• Unsaved changes' : 'All saved'}

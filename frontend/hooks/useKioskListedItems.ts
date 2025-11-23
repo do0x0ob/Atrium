@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSuiClient } from '@mysten/dapp-kit';
 import { KioskClient, Network } from '@mysten/kiosk';
-import { getWalrusBlobUrl } from '@/config/walrus';
 
 export interface ListedNFT {
   id: string;

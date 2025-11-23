@@ -82,16 +82,6 @@ export async function purchaseNFT(
   kioskClient: KioskClient,
   buyerAddress: string
 ): Promise<Transaction> {
-  console.log('🛒 purchaseNFT called with:', {
-    sellerKioskId,
-    nftId,
-    nftType,
-    price: price.toString(),
-    buyerKioskId,
-    buyerAddress,
-    kioskClient: !!kioskClient
-  });
-
   if (!kioskClient) {
     throw new Error('kioskClient is required');
   }
@@ -101,69 +91,160 @@ export async function purchaseNFT(
   }
 
   try {
-    const tx = new Transaction();
-    console.log('📝 Transaction created');
-
-    // Fetch the buyer's kiosk caps
-    const { kioskOwnerCaps } = await kioskClient.getOwnedKiosks({
-      address: buyerAddress
+    const suiClient = kioskClient.client;
+    const { data: kioskCaps } = await suiClient.getOwnedObjects({
+      owner: buyerAddress,
+      filter: {
+        StructType: '0x2::kiosk::KioskOwnerCap'
+      },
+      options: {
+        showContent: true,
+        showType: true,
+      }
     });
-    
-    console.log('🔑 Fetched kiosk caps:', kioskOwnerCaps?.length || 0);
-    console.log('🔑 All caps:', kioskOwnerCaps?.map(cap => ({
-      objectId: cap.objectId,
-      kioskId: cap.kioskId,
-      isPersonal: cap.isPersonal
-    })));
 
-    if (!kioskOwnerCaps || kioskOwnerCaps.length === 0) {
+    if (!kioskCaps || kioskCaps.length === 0) {
       throw new Error('You do not have any kiosks. Please create one in settings first.');
     }
 
-    // Find the matching cap by kiosk ID, or use the first one if not specified
-    let matchingCap = buyerKioskId 
-      ? kioskOwnerCaps.find(cap => cap.kioskId === buyerKioskId)
-      : kioskOwnerCaps[0];
+    // Find the matching cap or use first one
+    let capObj = kioskCaps[0];
     
-    // Fallback to first kiosk if specified one not found
-    if (!matchingCap && buyerKioskId) {
-      console.warn('⚠️ Specified kiosk not found, using first available kiosk');
-      console.warn('  Looking for:', buyerKioskId);
-      console.warn('  Available:', kioskOwnerCaps.map(cap => cap.kioskId));
-      matchingCap = kioskOwnerCaps[0];
+    if (buyerKioskId && kioskCaps.length > 1) {
+      // Try to find matching kiosk
+      const found = kioskCaps.find(cap => {
+        if (cap.data?.content && 'fields' in cap.data.content) {
+          const fields = cap.data.content.fields as any;
+          const kioskId = fields.for || fields.kiosk_id;
+          return kioskId === buyerKioskId;
+        }
+        return false;
+      });
+      if (found) capObj = found;
     }
 
-    if (!matchingCap) {
-      throw new Error('Could not find a valid kiosk. Please create one in settings first.');
+    if (!capObj.data?.content || !('fields' in capObj.data.content)) {
+      throw new Error('Invalid kiosk cap structure');
     }
 
-    console.log('✅ Using kiosk cap:', {
-      objectId: matchingCap.objectId,
-      kioskId: matchingCap.kioskId,
-      isPersonal: matchingCap.isPersonal
+    const fields = capObj.data.content.fields as any;
+    const finalKioskId = fields.for || fields.kiosk_id;
+    const finalKioskCapId = capObj.data.objectId;
+
+    if (!finalKioskId || !finalKioskCapId) {
+      throw new Error('Could not extract kiosk ID or cap ID');
+    }
+
+    // Fetch transfer policy
+    const policies = await kioskClient.getTransferPolicies({
+      type: nftType
+    });
+    
+    if (!policies || policies.length === 0) {
+      throw new Error('No transfer policy found for this NFT type');
+    }
+    
+    const policy = policies[0];
+
+    // Check for royalty rule
+    const hasRoyaltyRule = policy.rules && policy.rules.some((rule: any) => {
+      const ruleStr = typeof rule === 'string' ? rule : JSON.stringify(rule);
+      return ruleStr.includes('royalty_rule') || ruleStr.includes('RoyaltyRule');
     });
 
-    const kioskTx = new KioskTransaction({ 
-      transaction: tx, 
-      kioskClient,
-      cap: matchingCap,
-    });
-    console.log('📦 KioskTransaction created');
+    // Build transaction manually
+    const tx = new Transaction();
+    
+    // Calculate royalty (10% = 1000 basis points)
+    const royaltyBps = 1000;
+    const priceNum = Number(price);
+    const royaltyAmount = hasRoyaltyRule ? Math.floor((priceNum * royaltyBps) / 10000) : 0;
 
-    await kioskTx.purchaseAndResolve({
-      itemId: nftId,
-      itemType: nftType,
-      price,
-      sellerKiosk: sellerKioskId,
-    });
-    console.log('✅ purchaseAndResolve completed');
+    // Split coins for payment
+    const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(priceNum)]);
+    
+    // Split coins for royalty if needed
+    let royaltyCoin;
+    if (royaltyAmount > 0) {
+      [royaltyCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(royaltyAmount)]);
+    }
 
-    kioskTx.finalize();
-    console.log('✅ Transaction finalized');
+    // Purchase from kiosk
+    const [item, transferRequest] = tx.moveCall({
+      target: '0x2::kiosk::purchase',
+      typeArguments: [nftType],
+      arguments: [
+        tx.object(sellerKioskId),
+        tx.pure.id(nftId),
+        paymentCoin,
+      ],
+    });
+
+    // Pay royalty if needed
+    if (hasRoyaltyRule && royaltyAmount > 0 && royaltyCoin) {
+      let royaltyPackageId = null;
+      
+      // Extract package ID from policy rules
+      if (policy.rules && policy.rules.length > 0) {
+        const royaltyRuleStr = policy.rules.find((rule: any) => {
+          const ruleStr = typeof rule === 'string' ? rule : JSON.stringify(rule);
+          return ruleStr.includes('royalty_rule');
+        });
+        
+        if (royaltyRuleStr) {
+          const ruleStr = typeof royaltyRuleStr === 'string' ? royaltyRuleStr : JSON.stringify(royaltyRuleStr);
+          const packageMatch = ruleStr.match(/^(0x[a-fA-F0-9]+)::/);
+          if (packageMatch) {
+            royaltyPackageId = packageMatch[1];
+          }
+        }
+      }
+      
+      // Fallback: extract package ID from NFT type
+      if (!royaltyPackageId) {
+        const packageMatch = nftType.match(/(0x[a-fA-F0-9]+)::/);
+        if (packageMatch) {
+          royaltyPackageId = packageMatch[1];
+        } else {
+          throw new Error('Could not extract package ID from NFT type or policy rules');
+        }
+      }
+      
+      tx.moveCall({
+        target: `${royaltyPackageId}::royalty_rule::pay`,
+        typeArguments: [nftType],
+        arguments: [
+          tx.object(policy.id),
+          transferRequest,
+          royaltyCoin,
+        ],
+      });
+    }
+
+    // Confirm transfer request
+    tx.moveCall({
+      target: '0x2::transfer_policy::confirm_request',
+      typeArguments: [nftType],
+      arguments: [
+        tx.object(policy.id),
+        transferRequest,
+      ],
+    });
+
+    // Place item in buyer's kiosk
+    tx.moveCall({
+      target: '0x2::kiosk::place',
+      typeArguments: [nftType],
+      arguments: [
+        tx.object(finalKioskId),
+        tx.object(finalKioskCapId),
+        item,
+      ],
+    });
 
     return tx;
   } catch (error) {
-    console.error('❌ Error in purchaseNFT:', error);
+    console.error('Error in purchaseNFT:', error);
     throw error;
   }
 }
