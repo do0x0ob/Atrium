@@ -163,6 +163,11 @@ export function useThreeScene(options: UseThreeSceneOptions = {}) {
     });
   }, []);
 
+  // Update floating island base style
+  const updateFloatingIslandBaseStyle = useCallback((subscriberCount: number) => {
+    sceneManagerRef.current?.updateFloatingIslandBaseStyle(subscriberCount);
+  }, []);
+
   // Audience seat management
   const updateAudienceSeats = useCallback((subscriberCount: number, maxDisplay: number = 50) => {
     sceneManagerRef.current?.updateAudienceSeats(subscriberCount, maxDisplay);
@@ -233,6 +238,7 @@ export function useThreeScene(options: UseThreeSceneOptions = {}) {
     loadModels,
     removeModel,
     clearModels,
+    updateFloatingIslandBaseStyle,
     updateAudienceSeats,
     getAudienceSeatPositions,
     getHolographicScreen,
