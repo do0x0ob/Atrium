@@ -21,13 +21,19 @@ export function buildSceneGenerationPrompt(
 ): string {
   const { btc, eth, sui, wal, aggregatedMetrics, globalMarket, trending, fearGreedIndex } = chainData;
   
+  // Format price changes with explicit +/- signs for clarity
+  const formatPriceChange = (change: number) => {
+    const sign = change >= 0 ? '+' : '';
+    return `${sign}${change.toFixed(2)}%`;
+  };
+  
   let marketDataSection = `**Current Market Data (Weather Influence Weight: SUI 40% > WAL 30% > BTC 20% > ETH 10%):**
-- SUI (Primary): $${sui.price.toFixed(4)}, 24h change: ${sui.priceChange24h.toFixed(2)}%, volume: $${(sui.volume24h / 1e9).toFixed(2)}B
-- WAL/Walrus (Secondary): $${wal.price.toFixed(4)}, 24h change: ${wal.priceChange24h.toFixed(2)}%, volume: $${(wal.volume24h / 1e9).toFixed(2)}B
-- BTC (Reference): $${btc.price.toFixed(2)}, 24h change: ${btc.priceChange24h.toFixed(2)}%, volume: $${(btc.volume24h / 1e9).toFixed(2)}B
-- ETH (Reference): $${eth.price.toFixed(2)}, 24h change: ${eth.priceChange24h.toFixed(2)}%, volume: $${(eth.volume24h / 1e9).toFixed(2)}B
+- SUI (Primary): $${sui.price.toFixed(4)}, 24h change: ${formatPriceChange(sui.priceChange24h)}, volume: $${(sui.volume24h / 1e9).toFixed(2)}B
+- WAL/Walrus (Secondary): $${wal.price.toFixed(4)}, 24h change: ${formatPriceChange(wal.priceChange24h)}, volume: $${(wal.volume24h / 1e9).toFixed(2)}B
+- BTC (Reference): $${btc.price.toFixed(2)}, 24h change: ${formatPriceChange(btc.priceChange24h)}, volume: $${(btc.volume24h / 1e9).toFixed(2)}B
+- ETH (Reference): $${eth.price.toFixed(2)}, 24h change: ${formatPriceChange(eth.priceChange24h)}, volume: $${(eth.volume24h / 1e9).toFixed(2)}B
 - Market sentiment: ${aggregatedMetrics.marketSentiment}
-- **Weighted average change**: ${aggregatedMetrics.averageChange.toFixed(2)}% (SUI weighted highest, WAL second)
+- **Weighted average change**: ${formatPriceChange(aggregatedMetrics.averageChange)} (SUI weighted highest, WAL second)
 - Volatility: ${aggregatedMetrics.volatility.toFixed(2)}
 - Market activity: ${aggregatedMetrics.marketActivity} (volume-based)
 - Trending strength: ${aggregatedMetrics.trendingStrength.toFixed(1)}/10`;
@@ -36,23 +42,25 @@ export function buildSceneGenerationPrompt(
     marketDataSection += `
 - Total market cap: $${(globalMarket.totalMarketCap / 1e12).toFixed(2)}T
 - Total 24h volume: $${(globalMarket.totalVolume24h / 1e9).toFixed(2)}B
-- Market cap change: ${globalMarket.marketCapChangePercentage24h.toFixed(2)}%
+- Market cap change: ${formatPriceChange(globalMarket.marketCapChangePercentage24h)}
 - BTC dominance: ${globalMarket.btcDominance.toFixed(1)}%`;
   }
 
   if (trending && trending.length > 0) {
-    marketDataSection += `\n- Trending coins: ${trending.map(c => `${c.symbol} (${c.priceChangePercentage24h.toFixed(1)}%)`).join(', ')}`;
+    marketDataSection += `\n- Trending coins: ${trending.map(c => {
+      const sign = c.priceChangePercentage24h >= 0 ? '+' : '';
+      return `${c.symbol} (${sign}${c.priceChangePercentage24h.toFixed(1)}%)`;
+    }).join(', ')}`;
   }
   
   // Add Fear and Greed Index if available
   if (fearGreedIndex) {
     marketDataSection += `\n- **Fear & Greed Index**: ${fearGreedIndex.value}/100 (${fearGreedIndex.valueClassification})`;
-    marketDataSection += `\n  💡 Use this to influence weather mood:`;
-    marketDataSection += `\n    - Extreme Fear (0-24): Dark, stormy, mysterious weather`;
-    marketDataSection += `\n    - Fear (25-44): Cloudy, rainy, melancholic`;
-    marketDataSection += `\n    - Neutral (45-55): Balanced, calm weather`;
-    marketDataSection += `\n    - Greed (56-75): Bright, sunny, energetic`;
-    marketDataSection += `\n    - Extreme Greed (76-100): Very bright, celebratory, maximum effects`;
+    marketDataSection += `\n  ⚠️ IMPORTANT: Fear & Greed Index is a sentiment indicator, but ACTUAL PRICE CHANGES take priority!`;
+    marketDataSection += `\n  💡 Use Fear & Greed to MODULATE mood, but if price changes contradict it, follow the actual price direction:`;
+    marketDataSection += `\n    - If prices are UP (+) but Fear & Greed is low: Use brighter colors but with some caution (cloudy/sunny mix)`;
+    marketDataSection += `\n    - If prices are DOWN (-) but Fear & Greed is high: Use darker colors but with some hope (rainy/cloudy mix)`;
+    marketDataSection += `\n    - When price changes and Fear & Greed align: Follow the stronger signal`;
   }
   
   // Calculate total volume for fish count suggestion
@@ -100,18 +108,21 @@ ${timeFactorsSection}
 
 **Generation Rules:**
 
-1. **Weather Type (weatherType)**:
-   - Strong Bull (>5%): sunny
-   - Mild Bull (0-5%): cloudy
+1. **Weather Type (weatherType)** - CRITICAL: Base on ACTUAL PRICE CHANGES first:
+   - Strong Bull (>5%): sunny (even if Fear & Greed is low, prices going up = bullish weather)
+   - Mild Bull (0-5%): cloudy (positive prices = positive weather, adjust intensity based on Fear & Greed)
    - Mild Bear (0 to -5%): rainy (MUST use very dark, cold colors: sky #3D4451, water #2C3E50, high fog)
    - Strong Bear (<-5%): stormy (MUST use extremely dark colors: sky #2F4F4F or darker, water #1C2841)
    - High Volatility (>8): foggy
    - Special conditions: snowy (rare, extreme cold market)
-   - **FEAR & GREED INFLUENCE**: If Fear & Greed Index is available:
-     * Extreme Fear (0-24): Override to stormy/foggy with dark colors
-     * Fear (25-44): Prefer rainy/cloudy
-     * Extreme Greed (76-100): Override to sunny with maximum brightness
-     * Greed (56-75): Prefer sunny/cloudy with bright colors
+   - **FEAR & GREED INFLUENCE** (MODULATE, don't override price direction):
+     * ⚠️ PRIORITY RULE: If weighted average change is POSITIVE (+), weather should reflect bullish conditions (sunny/cloudy), even if Fear & Greed is low
+     * ⚠️ PRIORITY RULE: If weighted average change is NEGATIVE (-), weather should reflect bearish conditions (rainy/stormy), even if Fear & Greed is high
+     * When prices are UP but Fear & Greed is Extreme Fear (0-24): Use sunny/cloudy but with slightly muted colors (moderate brightness)
+     * When prices are UP and Fear & Greed is Greed (56-75): Use sunny with bright colors
+     * When prices are UP and Fear & Greed is Extreme Greed (76-100): Use sunny with maximum brightness and celebration effects
+     * When prices are DOWN and Fear & Greed is Extreme Fear (0-24): Use stormy/foggy with very dark colors
+     * When prices are DOWN but Fear & Greed is Greed: Use rainy/cloudy (bearish weather but less extreme)
    - **OVERRIDE**: If special date event suggests specific weather, prioritize it!
 
 2. **Market Activity Influence**:
