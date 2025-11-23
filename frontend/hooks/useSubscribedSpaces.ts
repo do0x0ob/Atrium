@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { PACKAGE_ID } from '@/config/sui';
+import { fetchCategoryFromConfig } from '@/utils/configHelpers';
 
 export interface SubscribedSpaceData {
   id: string; // Space ID
@@ -49,7 +50,6 @@ export function useSubscribedSpaces() {
 
       console.log('📊 Found Subscription NFTs:', ownedSubscriptions.data.length);
 
-      // Fetch space data for each subscription
       const spaceDataPromises = ownedSubscriptions.data.map(async (obj) => {
         try {
           if (obj.data?.content?.dataType !== 'moveObject') {
@@ -65,7 +65,6 @@ export function useSubscribedSpaces() {
             return null;
           }
 
-          // Fetch the Space object
           const spaceObject = await suiClient.getObject({
             id: spaceId,
             options: { showContent: true }
@@ -77,16 +76,18 @@ export function useSubscribedSpaces() {
           }
 
           const spaceFields = (spaceObject.data.content as any).fields;
+          const configQuilt = spaceFields.config_quilt || spaceFields.cover_image_blob_id || '';
+          const category = await fetchCategoryFromConfig(configQuilt);
 
           return {
             id: spaceId,
-            kioskId: spaceId, // Use space ID as kioskId for routing
+            kioskId: spaceId,
             name: spaceFields.name || 'Untitled Space',
             description: spaceFields.description || '',
             coverImage: spaceFields.cover_image || spaceFields.cover_image_blob_id || '',
             subscriptionPrice: spaceFields.subscription_price || '0',
             creator: spaceFields.creator || '',
-            category: 'other', // Default category
+            category,
             subscriptionId,
           } as SubscribedSpaceData;
         } catch (err) {

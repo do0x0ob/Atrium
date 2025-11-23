@@ -5,12 +5,14 @@ import { SpaceInfoCard } from "./SpaceInfoCard";
 import { SpaceTabNavigation } from "../ui";
 import { ContentList, ContentItemData } from "../content";
 import { SubscribeButton } from "@/components/subscription/SubscribeButton";
+import { MerchList } from "../nft";
 
 interface SpaceDetailSidebarProps {
   space: {
-    id: string; // Space object ID
+    id: string;
     kioskId: string;
     kioskCapId?: string;
+    marketplaceKioskId?: string;
     name: string;
     description: string;
     coverImage: string;
@@ -31,6 +33,8 @@ interface SpaceDetailSidebarProps {
   onShowSubscribeForm: (show: boolean) => void;
   onUnlock: (itemId: string) => void;
   onView: (itemId: string) => void;
+  onViewIn3D?: (nftId: string) => void;
+  onPurchase: (nftId: string, nftType: string, price: string) => void;
   onJoinAtrium: () => void;
 }
 
@@ -50,6 +54,8 @@ export function SpaceDetailSidebar({
   onShowSubscribeForm,
   onUnlock,
   onView,
+  onViewIn3D,
+  onPurchase,
   onJoinAtrium,
 }: SpaceDetailSidebarProps) {
   return (

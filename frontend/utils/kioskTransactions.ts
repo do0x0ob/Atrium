@@ -1,24 +1,38 @@
 import { Transaction } from '@mysten/sui/transactions';
-import { KioskTransaction } from '@mysten/kiosk';
+import { KioskTransaction, KioskClient } from '@mysten/kiosk';
+
+export interface KioskCapData {
+  objectId: string;
+  kioskId: string;
+  isPersonal?: boolean;
+}
 
 export function listNFT(
   nftId: string,
   nftType: string,
-  price: string,
-  kioskCapId: string,
-  kioskClient: any
+  price: bigint,
+  kioskCapId: string | KioskCapData,
+  kioskClient: KioskClient
 ): Transaction {
+  if (!kioskClient) {
+    throw new Error('kioskClient is required but was undefined');
+  }
+  if (!kioskCapId) {
+    throw new Error('kioskCapId is required but was undefined');
+  }
+
   const tx = new Transaction();
+  const cap = typeof kioskCapId === 'string' ? kioskCapId : kioskCapId;
 
   const kioskTx = new KioskTransaction({ 
     transaction: tx, 
     kioskClient,
-    cap: tx.object(kioskCapId) as any,
+    cap: cap as any,
   });
   
   kioskTx.list({
-    itemType: nftType,
     itemId: nftId,
+    itemType: nftType,
     price,
   });
 
@@ -30,20 +44,28 @@ export function listNFT(
 export function delistNFT(
   nftId: string,
   nftType: string,
-  kioskCapId: string,
-  kioskClient: any
+  kioskCapId: string | KioskCapData,
+  kioskClient: KioskClient
 ): Transaction {
+  if (!kioskClient) {
+    throw new Error('kioskClient is required but was undefined');
+  }
+  if (!kioskCapId) {
+    throw new Error('kioskCapId is required but was undefined');
+  }
+
   const tx = new Transaction();
+  const cap = typeof kioskCapId === 'string' ? kioskCapId : kioskCapId;
 
   const kioskTx = new KioskTransaction({ 
     transaction: tx, 
     kioskClient,
-    cap: tx.object(kioskCapId) as any,
+    cap: cap as any,
   });
   
   kioskTx.delist({
-    itemType: nftType,
     itemId: nftId,
+    itemType: nftType,
   });
 
   kioskTx.finalize();
@@ -55,21 +77,21 @@ export async function purchaseNFT(
   sellerKioskId: string,
   nftId: string,
   nftType: string,
-  price: string,
+  price: bigint,
   buyerKioskCapId: string,
-  kioskClient: any
+  kioskClient: KioskClient
 ): Promise<Transaction> {
   const tx = new Transaction();
 
   const kioskTx = new KioskTransaction({ 
     transaction: tx, 
     kioskClient,
-    cap: tx.object(buyerKioskCapId) as any,
+    cap: buyerKioskCapId as any,
   });
 
   await kioskTx.purchaseAndResolve({
-    itemType: nftType,
     itemId: nftId,
+    itemType: nftType,
     price,
     sellerKiosk: sellerKioskId,
   });
@@ -83,14 +105,14 @@ export function placeNFT(
   nftId: string,
   nftType: string,
   kioskCapId: string,
-  kioskClient: any
+  kioskClient: KioskClient
 ): Transaction {
   const tx = new Transaction();
 
   const kioskTx = new KioskTransaction({ 
     transaction: tx, 
     kioskClient,
-    cap: tx.object(kioskCapId) as any,
+    cap: kioskCapId as any,
   });
   
   kioskTx.place({
@@ -107,7 +129,7 @@ export function takeNFT(
   nftId: string,
   nftType: string,
   kioskCapId: string,
-  kioskClient: any,
+  kioskClient: KioskClient,
   recipientAddress: string
 ): Transaction {
   const tx = new Transaction();
@@ -115,7 +137,7 @@ export function takeNFT(
   const kioskTx = new KioskTransaction({ 
     transaction: tx, 
     kioskClient,
-    cap: tx.object(kioskCapId) as any,
+    cap: kioskCapId as any,
   });
   
   const item = kioskTx.take({
