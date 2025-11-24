@@ -1,5 +1,7 @@
 # Atrium 🏛️
 
+<img width="1789" height="1049" alt="231_barks_hearts" src="https://github.com/user-attachments/assets/3b844801-dd97-4aea-85ca-b0fa5fb7a4da" />
+
 > **Web3 creator platform with AI-powered dynamic 3D spaces**
 
 **Atrium** is a decentralized creator platform where creators can publish essays and videos within their spaces. What makes it unique is an **AI Weather System** that transforms each space’s atmosphere based on crypto market data, real-world time, and subscriber count.
